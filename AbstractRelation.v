@@ -44,20 +44,24 @@ Module Type REL.
   end.
 
   Hypothesis V_eqb : V -> V -> bool.
-  Definition T_eqb {n} : T n -> T n -> bool := Vector.eqb _ V_eqb.
+  Parameter T_eqb : forall n, T n -> T n -> bool.
+  Implicit Arguments T_eqb [n].
 
   Definition flatnat := fun n => match n with 0 => 0 | _ => 1 end.
 
   Hypothesis V_dec : forall (v w : V), {v = w} + {v <> w}.
   Hypothesis V_eqb_eq : forall (v w : V), V_eqb v w = true <-> v = w.
-  Lemma T_dec : forall n, forall (x y : T n), {x = y} + {x <> y}.
+  Parameter T_dec : forall n, forall (x y : T n), {x = y} + {x <> y}.
+(*
   Proof.
     intros. eapply Vector.eq_dec. apply V_eqb_eq.
   Qed.
-  Lemma T_eqb_eq : forall n, forall (v w : T n), T_eqb v w = true <-> v = w.
-  Proof.
+*)
+  Parameter T_eqb_eq : forall n, forall (v w : T n), T_eqb v w = true <-> v = w.
+(*  Proof.
     intros. eapply Vector.eqb_eq. apply V_eqb_eq.
   Qed.
+*)
 
   Parameter p_fs : forall n, forall r : R n, forall t, memb r t > 0 -> List.In t (supp r).
   Parameter p_fs_r : forall n, forall r : R n, forall t, List.In t (supp r) -> memb r t > 0.

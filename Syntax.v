@@ -170,11 +170,11 @@ Module Type SQL (Db : DB).
   Definition tmlist_of_ctx (G: Ctx) : list pretm := 
     List.concat (mapi (fun i => List.map (fun x => tmvar (i,x))) G).
 
-  Inductive j_var (a : Name) : Scm -> Type :=
+  Inductive j_var (a : Name) : Scm -> Prop :=
   | j_varhd   : forall s, ~ List.In a s -> j_var a (a::s)
   | j_varcons : forall b s, a <> b -> j_var a s -> j_var a (b::s).
 
-  Inductive j_tm  (g : Ctx) : pretm -> Type := 
+  Inductive j_tm  (g : Ctx) : pretm -> Prop := 
   | j_const : forall c, j_tm g (tmconst c)
   | j_null  : j_tm g tmnull
   | j_tmvar : forall n a s, List.nth_error g n = Some s -> j_var a s -> j_tm g (tmvar (n,a)).
@@ -185,7 +185,7 @@ Module Type SQL (Db : DB).
 
   Variable dflist : forall A, list A -> Prop.
 
-  Inductive j_query (d : Db.D) : Ctx -> prequery -> Scm -> Type :=
+  Inductive j_query (d : Db.D) : Ctx -> prequery -> Scm -> Prop :=
   | j_select :
       forall s c b btm btb g g1,
       j_btb d g btb g1 ->       (* btb is wellformed under Ctx g, producing a context extension g1 *)
@@ -207,11 +207,11 @@ Module Type SQL (Db : DB).
   | j_inters  : forall g b q1 q2 s, j_query d g q1 s -> j_query d g q2 s -> j_query d g (qinters b q1 q2) s
   | j_except  : forall g b q1 q2 s, j_query d g q1 s -> j_query d g q2 s -> j_query d g (qexcept b q1 q2) s
 
-  with j_tb (d : Db.D) : Ctx -> pretb -> Scm -> Type :=
+  with j_tb (d : Db.D) : Ctx -> pretb -> Scm -> Prop :=
   | j_tbbase  : forall x s g, j_db d -> Db.db_schema d x = Some s -> j_tb d g (tbbase x) s
   | j_tbquery : forall g q s, j_query d g q s -> j_tb d g (tbquery q) s
 
-  with j_cond (d : Db.D) : Ctx -> precond -> Type :=
+  with j_cond (d : Db.D) : Ctx -> precond -> Prop :=
   | j_cndtrue   : forall g, j_db d -> j_cond d g cndtrue
   | j_cndfalse  : forall g, j_db d -> j_cond d g cndfalse
   | j_cndnull   : forall g t b, j_db d -> j_tm g t -> j_cond d g (cndnull b t)
@@ -225,12 +225,12 @@ Module Type SQL (Db : DB).
   | j_cndnot    : forall g c, j_cond d g c -> j_cond d g (cndnot c)
 
   (* the output of j_btb can use any choice of names, avoiding collision *)
-  with j_btb  (d : Db.D) : Ctx -> list (pretb * Scm) -> Ctx -> Type :=
+  with j_btb  (d : Db.D) : Ctx -> list (pretb * Scm) -> Ctx -> Prop :=
   | j_btbnil  : forall g, j_db d -> j_btb d g List.nil List.nil
   | j_btbcons : forall g T s s' btb g1, length s = length s' -> List.NoDup s' -> 
                 j_tb d g T s -> j_btb d g btb g1 -> j_btb d g ((T,s')::btb) (s'::g1)
 
-  with j_inquery (d : Db.D) : Ctx -> prequery -> Type :=
+  with j_inquery (d : Db.D) : Ctx -> prequery -> Prop :=
   | j_inselect :
       forall c b btm btb g g1,
       j_btb d g btb g1 ->       (* btb is wellformed under Ctx g, producing a context extension g1 *)

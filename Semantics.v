@@ -1,5 +1,5 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool JMeq 
-  FunctionalExtensionality ProofIrrelevance EqdepFacts Omega.
+  FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega.
 
   Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
 
@@ -49,6 +49,26 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRel
    end).
   Defined.
 
+  Lemma f_JMeq : forall A (T : A -> Type) (f : forall a, T a) x y, x = y -> f x ~= f y.
+  Proof.
+    intros. rewrite H. reflexivity.
+  Qed.
+
+  Lemma existT_projT2_eq {A} {P : A -> Type} a (p1 p2 :  P a) (e : existT _ _ p1 = existT _ _ p2)
+    : p1 = p2.
+  Proof.
+    transitivity (projT2 (existT P a p1)). reflexivity. 
+    transitivity (projT2 (existT P a p2)). apply JMeq_eq. eapply (f_JMeq _ _ (@projT2 A P) _ _ e).
+    reflexivity.
+  Qed.
+
+  Lemma existT_eq_elim {A} {P : A -> Type} {a} {b} {p1} {p2} (e : existT P a p1 = existT P b p2) :
+    forall (Q:Prop), (a = b -> p1 ~= p2 -> Q) -> Q.
+  Proof.
+    intros. injection e. intros _ H1. generalize dependent p2. generalize dependent p1. 
+    rewrite H1. intros. apply H; auto. apply eq_JMeq. apply (existT_projT2_eq _ _ _ e).
+  Qed.
+
 Module Type EV (Db : DB) (Sql : SQL Db).
 
   Import Db.
@@ -58,8 +78,18 @@ Module Type EV (Db : DB) (Sql : SQL Db).
   Parameter env : Ctx -> Type.
   Parameter env_lookup  : forall G : Ctx, env G -> FullVar -> option Value.
 
+(*
   Hypothesis var_sem : forall n a g s, List.nth_error g n = Some s -> j_var a s -> env g -> Db.Value.
+*)
+  Parameter j_tm_sem : forall G, pretm -> (env G -> Value) -> Prop.
+  Parameter j_tml_sem : forall G (tml : list pretm), (env G -> Rel.T (List.length tml)) -> Prop.
 
+  Hypothesis j_tm_sem_fun :
+    forall G t St, j_tm_sem G t St -> forall St0, j_tm_sem G t St0 -> St = St0.
+  Hypothesis j_tml_sem_fun :
+    forall G tml Stml, j_tml_sem G tml Stml -> forall Stml0, j_tml_sem G tml Stml0 -> Stml = Stml0.
+
+(*
   Parameter tm_sem : forall G t (HWF: j_tm G t) (h : env G), Db.Value.
 
   Parameter tml_sem : forall (G : Ctx) (tml : list pretm) (HWF : j_tml G tml) (h : env G), list Value.
@@ -67,6 +97,7 @@ Module Type EV (Db : DB) (Sql : SQL Db).
   Definition v_tml_sem : forall (G : Ctx) (tml : list pretm) (HWF : j_tml G tml) (h : env G), Rel.T (length tml).
     intros. rewrite <- (p_tml_sem G tml HWF h). apply of_list.
   Defined.
+*)
 
   Hypothesis env_of_tuple : forall G, forall Vl : Db.Rel.T (list_sum (List.map (List.length (A:=Name)) G)), env G.
 
@@ -77,6 +108,7 @@ Module Type EV (Db : DB) (Sql : SQL Db).
 
   Hypothesis env_app : forall G1 G2, env G1 -> env G2 -> env (G1++G2).
 
+(*
   Hypothesis tm_sem_pi : 
     forall G t H h, forall H' h', h ~= h' -> tm_sem G t H h ~= tm_sem G t H' h'.
 
@@ -85,7 +117,7 @@ Module Type EV (Db : DB) (Sql : SQL Db).
 
   Hypothesis v_tml_sem_pi :
     forall G tml H h, forall H' h', h ~= h' -> v_tml_sem G tml H h ~= v_tml_sem G tml H' h'.
-
+*)
 End EV.
 
 Fixpoint findpos {A} (l : list A) (p : A -> bool) start {struct l} : option nat := 
@@ -98,14 +130,28 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
   Import Db.
   Import Sql.
 
-  Definition preenv := list (list Value). (* environment (for evaluation) *)
-  Definition env := fun g => { h : preenv & List.map (List.length (A:=Name)) g = List.map (List.length (A:=Value)) h }.
+  Definition preenv := list Value. (* environment (for evaluation) *)
+  Definition env := fun (g : Ctx) => 
+    { h : preenv & (List.length (List.concat g) =? List.length h) = true }. 
+
+  Fixpoint scm_env s (h : preenv) {struct s} : list (Name * Value) * preenv := 
+    match s, h with
+    | List.nil, _ => (List.nil, h)
+    | _, List.nil => (List.nil, List.nil)
+    | a::s0, v::h0 => let (sh,h') := scm_env s0 h0 in ((a,v)::sh,h')
+    end. 
+
+  Fixpoint ctx_env G (h : preenv) {struct G} : list (list (Name * Value)) :=
+    match G with
+    | List.nil => List.nil
+    | s::G0 => let (sh,h') := scm_env s h in sh :: ctx_env G0 h'
+    end.
+
   Definition env_lookup : forall G : Ctx, env G -> FullVar -> option Value :=
     fun G h x => let (n,a) := x in
-      bind (nth_error G n)
-        (fun s => bind (findpos s (fun x => if Db.Name_dec x a then true else false) 0)
-          (fun i => bind (nth_error (projT1 h) n)
-            (fun h0 => nth_error h0 i))).
+      bind (nth_error (ctx_env G (projT1 h)) n)
+        (fun sh => bind (find (fun x => if Db.Name_dec (fst x) a then true else false) sh)
+          (fun p => ret (snd p))).
 
   Lemma findpos_Some A (s : list A) p :
     forall m n, findpos s p m = Some n -> n < m + length s.
@@ -117,6 +163,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
       - pose (H _ _ H0). omega.
   Qed.
 
+(*
   Definition j_var_findpos a s :
     j_var a s -> 
     forall m, { n : nat & n < m + length s /\ findpos s (fun x => if Db.Name_dec x a then true else false) m = Some n }.
@@ -127,6 +174,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
       - destruct (H0 (S m)). destruct a0.
         exists x. split; auto; omega.
   Defined.
+*)
 
   Lemma j_var_nth_aux (h : list Value) s a : forall i,
     findpos s (fun x => if Db.Name_dec x a then true else false) 0 = Some i ->
@@ -138,6 +186,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     + apply nth_error_Some. rewrite <- H0. pose (findpos_Some _ _ _ _ _ H). omega.
   Qed.
 
+(*
   Lemma j_var_nth (h : list Value) s a :
     j_var a s -> length s = length h ->
     { i : nat & { v : Value & findpos s (fun x => if Db.Name_dec x a then true else false) 0 = Some i /\ nth_error h i = Some v } }.
@@ -146,6 +195,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     destruct (j_var_nth_aux _ _ _ _ H1 H).
     exists x. exists x0. split; auto.
   Qed.
+*)
 
   (*
   Definition env_shadow (h : Env) (Al : list FullName) : Env.
@@ -229,6 +279,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     + intros m IH l; destruct l; simpl; intuition. discriminate H.
   Qed.
 
+(*
   Lemma env_scm_length (G : Ctx) (h : env G) : forall n s, 
     List.nth_error G n = Some s -> { h0 : list Value & List.nth_error (projT1 h) n = Some h0 /\ length s = length h0 }.
   Proof.
@@ -236,6 +287,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     clearbody e0. rewrite e in e0. destruct (nth_error_map_r _ _ _ _ _ _ e0).
     destruct a. exists x0. simpl. auto.
   Qed.
+*)
 
   Definition unopt {A} : forall (x : option A), x <> None -> A.
     refine (fun x => match x as x0 return (x0 <> None -> A) with Some x' => fun _ => x' | None => _ end).
@@ -248,13 +300,91 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     contradiction Hx. reflexivity.
   Qed.
 
+  Lemma p_scm_preenv s G (h : preenv) :
+    length h = length (List.concat (s::G)) ->
+    forall y h0, scm_env s h = (y,h0) ->
+    length y = length s /\ length h0 = length h - length s.
+  Proof.
+    intros. generalize s, H, y, h0, H0. clear s H y h0 H0. induction h; simpl; intros.
+    + destruct s.
+      - simpl in H0. injection H0. intros. subst. intuition.
+      - simpl in H. discriminate H.
+    + destruct s.
+      - simpl. simpl in H0. injection H0; intros; subst. simpl; intuition.
+      - simpl in H0. destruct (scm_env s h) eqn:e0. injection H0; intros; clear H0. 
+        simpl in H. injection H. intro. clear H.
+        destruct (IHh _ H0 _ _ e0). subst. split.
+        * simpl. rewrite H. reflexivity.
+        * rewrite H3. simpl. reflexivity.
+  Qed.
+
+  Lemma p_scm_env s G (h : env (s::G)) :
+    forall y p, scm_env s (projT1 h) = (y,p) ->
+    length y = length s /\ length p = length (projT1 h) - length s.
+  Proof.
+    intros. destruct h. simpl in e. eapply (p_scm_preenv _ G). symmetry.
+    apply Nat.eqb_eq. exact e. exact H.
+  Qed.
+
+(*
+  Lemma scm_env_tech a s G (h : env (s::G)) :
+    forall y p, 
+    scm_env s (projT1 h) = (y,p) -> j_var a s ->
+    find (fun x => if Db.Name_dec (fst x) a then true else false) y <> None.
+  Proof.
+    intros. destruct (p_scm_env _ _ _ _ _ H). destruct h. simpl in H, H1.
+    generalize x, e, y, p, H, H0, H1. clear x e y p H H0 H1. induction X; simpl; intros.
+    + destruct x.
+      - injection H. intros. subst. discriminate H0.
+      - destruct (scm_env s x). injection H. intros. subst.
+        simpl. destruct (Db.Name_dec a a); simpl; intuition. discriminate H2.
+    + destruct x.
+      - injection H. intros. subst. discriminate H0.
+      - destruct (scm_env s x) eqn:e0. injection H. intros. subst.
+        simpl. destruct (Db.Name_dec b a); simpl; intuition.
+        simpl in H0. injection H0; intro. 
+        clear H. simpl in H1.
+        assert ((length (concat (s::G)) =? length x) = true). exact e.
+        apply (IHX _ H _ _ e0 H3 H1). exact H2.
+  Qed.
+  Lemma ctx_env_tech a s G : 
+    forall n y p, length p = length (List.concat G) ->
+    nth_error G n = Some s -> j_var a s -> nth_error (ctx_env G p) n = Some y ->
+    find (fun x => if Db.Name_dec (fst x) a then true else false) y <> None.
+  Proof.
+    intros.
+    generalize n, y, p, H, H0, X, H1. clear n y p H H0 X H1. induction G; intros.
+    + destruct n; discriminate H0.
+    + simpl in H, H0. destruct (scm_env a0 p) eqn:e.
+      destruct (p_scm_preenv _ G _ H _ _ e).
+      destruct n.
+      - simpl in H, H0, H1. injection H0. rewrite e in H1. injection H1. intros. subst.
+        eapply (scm_env_tech a s G (existT _ p _) _ _ e X).
+      - simpl in H1. rewrite e in H1. eapply (IHG n y p0 _ H0 X H1). Unshelve.
+        * simpl. apply Nat.eqb_eq. symmetry. exact H.
+        * rewrite H3. rewrite H. rewrite app_length. omega.
+  Qed.
+
   Definition var_sem : forall n a g s, List.nth_error g n = Some s -> j_var a s -> env g -> Db.Value.
     refine (fun n a G s Hg Hs h => unopt (env_lookup G h (n,a)) _).
-    simpl. rewrite Hg. simpl.
-    destruct (env_scm_length _ h _ _ Hg). destruct a0.
-    destruct (j_var_nth _ _ _ Hs H0). destruct s0. destruct a0.
-    rewrite H1. simpl. rewrite H. simpl. rewrite H2.
-    intro Hfalse. discriminate Hfalse.
+    generalize dependent h. generalize dependent Hs. generalize dependent Hg.
+    generalize dependent n. induction G.
+    + intro. destruct n; simpl; discriminate.
+    + intro. destruct n; intros.
+      - injection Hg. intro. clear Hg. simpl. eapply bind_elim; intros.
+        * eapply bind_elim; intros.
+          ++ intro. discriminate H2.
+          ++ destruct (scm_env a0 (projT1 h)) eqn:e. simpl in e. rewrite e in H0.
+            injection H0. intro. subst.
+            destruct (scm_env_tech _ _ _ _ _ _ e Hs H1).
+        * destruct (scm_env a0 (projT1 h)) eqn:e. simpl in e. rewrite e in H0.
+          discriminate H0.
+      - simpl. unfold env_lookup in IHG. destruct h eqn:e0. simpl. destruct (scm_env a0 x) eqn:e1.
+        eapply (IHG n Hg Hs (existT (fun h => (length (concat G) =? length h) = true) p _)). Unshelve. simpl.
+        assert (length x = length (concat (a0::G))). symmetry. apply Nat.eqb_eq. exact e.
+        destruct (p_scm_preenv _ _ _ H _ _ e1). rewrite H1.
+        apply Nat.eqb_eq. rewrite H. 
+        simpl. rewrite app_length. omega.
   Defined.
 
   Theorem var_sem_pi n a G s HG Hs h : 
@@ -262,7 +392,122 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
   Proof.
     intros. unfold var_sem. apply eq_JMeq. rewrite <- H. apply unopt_pi. 
   Qed.
+*)
 
+  Definition env_hd {a} {s} {G} : env ((a::s)::G) -> Value.
+    refine (fun h => unopt (List.hd_error (projT1 h)) _).
+    destruct h. simpl. destruct x; simpl; intuition. discriminate H.
+  Defined.
+
+  Definition env_tl {a} {s} {G} : env ((a::s)::G) -> env (s::G).
+    refine (fun h => _).
+    enough ((length (concat (s::G)) =? length (List.tl (projT1 h))) = true).
+    unfold env. econstructor. exact H.
+    destruct h. destruct x; simpl; intuition.
+  Defined.
+
+  Inductive j_var_sem : forall s, Name -> (env (s::List.nil) -> Value) -> Prop :=
+  | jvs_hd : forall a s, ~ List.In a s -> j_var_sem (a::s) a (fun h => env_hd h)
+  | jvs_tl : forall a s b, 
+      forall Sb, a <> b -> j_var_sem s b Sb -> j_var_sem (a::s) b (fun h => Sb (env_tl h)).
+
+  Theorem j_var_sem_fun :
+    forall s a Sa, j_var_sem s a Sa -> forall Sa0, j_var_sem s a Sa0 -> Sa = Sa0.
+  Proof.
+    intros s a Sa Ha. induction Ha.
+    + intros. inversion H0.
+      - apply (existT_eq_elim H5). intros _. apply JMeq_eq.
+      - contradiction H5. reflexivity.
+    + intros. inversion H0.
+      - contradiction H.
+      - apply (existT_eq_elim H3); clear H3; intros; subst.
+        rewrite (IHHa _ H6). reflexivity.
+  Qed.
+
+(* change everything to Prop...
+
+  Theorem j_var_sem_to_j_var s a S (Ha : j_var_sem s a S) : j_var a s.
+  Proof.
+    
+*)
+
+  Definition subenv1 {G1} {G2} : env (G1++G2) -> env G1.
+    refine (fun h => _).
+    enough ((length (concat G1) =? length (firstn (length (concat G1)) (projT1 h))) = true).
+    unfold env. econstructor. exact H.
+    destruct h. apply Nat.eqb_eq. symmetry. apply firstn_length_le.
+    simpl. rewrite <- (proj1 (Nat.eqb_eq _ _) e). rewrite concat_app. rewrite app_length. omega.
+  Defined.
+
+  Lemma length_skipn {A} (l : list A) :
+    forall n, length (skipn n l) = length l - n.
+  Proof.
+    induction l; simpl; intuition; case n; intuition.
+  Qed.
+
+  Definition subenv2 {G1} {G2} : env (G1++G2) -> env G2.
+    refine (fun h => _).
+    enough ((length (concat G2) =? length (skipn (length (concat G1)) (projT1 h))) = true).
+    unfold env. econstructor. exact H.
+    destruct h. apply Nat.eqb_eq. simpl. rewrite length_skipn.
+    rewrite <- (proj1 (Nat.eqb_eq _ _) e). rewrite concat_app. rewrite app_length. omega.
+  Defined.
+
+  Inductive j_fvar_sem : forall G, nat -> Name -> (env G -> Value) -> Prop :=
+  | jfs_hd : forall s G a, 
+      forall Sa, j_var_sem s a Sa -> j_fvar_sem (s::G) O a (fun h => Sa (@subenv1 (s::List.nil) G h))
+  | jfs_tl : forall s G i a,
+      forall Sia, j_fvar_sem G i a Sia -> j_fvar_sem (s::G) (S i) a (fun h => Sia (@subenv2 (s::List.nil) G h)).
+
+  Theorem j_fvar_sem_fun :
+    forall G i a Sia, j_fvar_sem G i a Sia -> forall Sia0, j_fvar_sem G i a Sia0 -> Sia = Sia0.
+  Proof.
+    intros G i a Sia Hia. induction Hia.
+    + intros. inversion H0. apply (existT_eq_elim H2); clear H2; intros; subst. clear H2.
+      rewrite (j_var_sem_fun _ _ _ H _ H5). reflexivity.
+    + intros. inversion H. apply (existT_eq_elim H5); clear H5; intros; subst.
+      rewrite (IHHia _ H4). reflexivity.
+  Qed.
+
+  Inductive j_tm_sem0 (G:Ctx) : pretm -> (env G -> Value) -> Prop :=
+  | jts_const : forall c, j_tm_sem0 G (tmconst c) (fun _ => Db.c_sem c)
+  | jts_null  : j_tm_sem0 G tmnull (fun _ => None)
+  | jts_var   : forall i a, 
+      forall Sia,
+      j_fvar_sem G i a Sia -> j_tm_sem0 G (tmvar (i,a)) Sia.
+
+  Inductive j_tml_sem0 (G:Ctx) : forall (tml : list pretm), (env G -> Rel.T (List.length tml)) -> Prop :=
+  | jtmls_nil  : j_tml_sem0 G List.nil (fun _ => Vector.nil _)
+  | jtmls_cons : forall t tml,
+      forall St Stml,
+      j_tm_sem0 G t St -> j_tml_sem0 G tml Stml ->
+      j_tml_sem0 G (t::tml) (fun h => Vector.cons _ (St h) _ (Stml h)).
+
+  Derive Inversion j_tml_cons_sem with (forall G t tml Stml, j_tml_sem0 G (t::tml) Stml) Sort Prop.
+
+  (* we need to fool the kernel, because it doesn't accept instantiation to inductive types *)
+  Definition j_tm_sem := j_tm_sem0.
+  Definition j_tml_sem := j_tml_sem0.
+
+  Theorem j_tm_sem_fun :
+    forall G t St, j_tm_sem G t St -> forall St0, j_tm_sem G t St0 -> St = St0.
+  Proof.
+    intros G t St Ht. induction Ht.
+    + intros. inversion H. reflexivity.
+    + intros. inversion H. reflexivity.
+    + intros. inversion H0. apply (j_fvar_sem_fun _ _ _ _ H _ H4).
+  Qed.
+
+  Theorem j_tml_sem_fun :
+    forall G tml Stml, j_tml_sem G tml Stml -> forall Stml0, j_tml_sem G tml Stml0 -> Stml = Stml0.
+  Proof.
+    intros G tml Stml Html. induction Html.
+    + intros. inversion H. apply (existT_eq_elim H1); clear H1; intros; subst. reflexivity.
+    + intros. inversion H0. apply (existT_eq_elim H4); clear H4; intros; subst.
+      rewrite (j_tm_sem_fun _ _ _ H _ H3). rewrite (IHHtml _ H5). reflexivity.
+  Qed.
+
+(*
   Fixpoint tm_sem G t (HWF: j_tm G t) (h : env G) {struct HWF} : Db.Value :=
     match HWF with
     | j_const _ c => Db.c_sem c
@@ -288,10 +533,14 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
   generalize HWF. clear HWF. elim tml. auto.
   intros hd tl IH HWF. simpl. f_equal. apply IH.
   Qed.
-
+*)
   Definition env_app : forall G1 G2, env G1 -> env G2 -> env (G1++G2).
     refine (fun G1 G2 h1 h2 => existT _ (projT1 h1 ++ projT1 h2) _).
-    destruct h1. destruct h2. do 2 rewrite map_app. rewrite e, e0. reflexivity.
+    destruct h1. destruct h2. apply Nat.eqb_eq. 
+    rewrite concat_app. simpl. do 2 rewrite app_length. 
+    f_equal; apply Nat.eqb_eq.
+    exact e.
+    exact e0.
   Defined.
 
   Fixpoint env_of_tuple G : Db.Rel.T (list_sum (List.map (List.length (A:=Name)) G)) -> env G.
@@ -303,8 +552,8 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     + refine (fun _ _ => existT _ List.nil _). reflexivity.
     + simpl. intros. pose (p := split X); clearbody p.
       apply (env_app (s :: List.nil)).
-      - eapply (existT _ (Vector.to_list (fst p)::List.nil) _). Unshelve. simpl.
-        rewrite length_to_list. reflexivity.
+      - eapply (existT _ (Vector.to_list (fst p)) _). Unshelve. simpl.
+        rewrite length_to_list. rewrite app_length. simpl. apply Nat.eqb_eq. omega.
       - apply (env_of_tuple _ (snd p)).
   Defined.
 
@@ -325,6 +574,7 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     elim v; simpl; intuition.
   Qed.
 
+(*
   Theorem tm_sem_pi G t H h : 
     forall H' h', h ~= h' -> tm_sem G t H h ~= tm_sem G t H' h'.
   Proof.
@@ -357,22 +607,78 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     repeat rewrite eq_rect_eq_refl. rewrite (tml_sem_pi _ _ _ _ H' h' H0).
     reflexivity.
   Qed.
-
+*)
   Lemma nth_error_app2_eq {A} (G2:list A) n : forall G1, nth_error (G2 ++ G1) (length G2 + n) = nth_error G1 n.
   Proof.
     elim G2; auto.
   Qed.
 
-  Lemma length_env {G} (h: env G) : length (projT1 h) = length G.
+  Lemma scm_env_skipn s : forall l h h0, scm_env s h = (l, h0) -> h0 = skipn (length s) h.
   Proof.
-    generalize (projT2 h); simpl. 
-    generalize (projT1 h); clear h. elim G.
-    + intro p. destruct p; simpl; intuition. discriminate H.
-    + intros x G' IH. destruct p; simpl; intuition.
-      - discriminate H.
-      - f_equal. apply IH. injection H. intros. exact H0.
+    induction s.
+    + simpl; intros. injection H; intuition.
+    + intros. destruct h.
+      - simpl in H. simpl. injection H; intuition.
+      - simpl in H. simpl. destruct (scm_env s h) eqn:e. injection H. intros. 
+        subst. apply (IHs _ _ _ e).
   Qed.
 
+  Lemma skipn_skipn {A} m n : forall (l : list A), skipn m (skipn n l) = skipn (m+n) l.
+  Proof.
+    induction n.
+    + simpl; intuition. replace (m + 0) with m. reflexivity. omega.
+    + intro. destruct l.
+      - simpl. destruct m; simpl; intuition.
+      - replace (m + S n) with (S (m + n)). simpl. apply IHn.
+        omega.
+  Qed.
+
+  Lemma skipn_append {A} (l1 l2 : list A) : skipn (length l1) (l1 ++ l2) = l2.
+  Proof.
+    induction l1; simpl; intuition.
+  Qed.
+
+  Lemma nth_error_ctx_env_app_eq G2 n : forall G1 h1 h2,
+      length (concat G1) = length h1 ->
+      length (concat G2) = length h2 ->
+      nth_error (ctx_env (G2 ++ G1) (h2 ++ h1)) (length G2 + n)
+      = nth_error (ctx_env G1 h1) n.
+  Proof.
+    induction G2; simpl; intuition.
+    + replace h2 with (@List.nil Value). reflexivity.
+      symmetry. apply length_zero_iff_nil. intuition.
+    + destruct (scm_env a (h2++h1)) eqn:e. rewrite app_length in H0.
+      enough (length (h2++h1) = length (List.concat (a::G2++G1))).
+      destruct (p_scm_preenv _ _ _ H1 _ _ e).
+      simpl in H1. rewrite concat_app in H1. repeat rewrite app_length in H1.
+      enough (length p = length (concat G2) + length (concat G1)).
+      rewrite <- (firstn_skipn (length (concat G2)) p).
+      replace (skipn (length (concat G2)) p) with h1.
+      apply IHG2. exact H. rewrite firstn_length. rewrite H4. rewrite min_l. reflexivity. omega.
+      rewrite (scm_env_skipn _ _ _ _ e). 
+      rewrite skipn_skipn. 
+      replace (length (concat G2) + length a) with (length h2). symmetry. apply skipn_append.
+      omega.
+      rewrite H3. rewrite app_length. omega.
+      simpl. rewrite concat_app. do 3 rewrite app_length. omega.
+  Qed.
+
+  Lemma length_env {G} (h: env G) : length (projT1 h) = length (concat G).
+  Proof.
+    destruct h. simpl. symmetry. apply Nat.eqb_eq. exact e.
+  Qed.
+
+(*
+  Lemma nth_error_ctx_env {G} : 
+    forall ..., nth_error G n = Some x ->
+    nth_error (ctx_env G h) n = Some y.
+  Proof.
+    induction G; simpl; intuition.
+    destruct (scm_env a h); simpl. intuition.
+  Qed.
+*)
+
+(*
   Lemma tm_sem_weak G1 t H1 h1:
     forall G2 H2 h2,
     tm_sem G1 t H1 h1 = tm_sem (G2 ++ G1) (tm_lift t (length G2)) H2 (env_app _ _ h2 h1).
@@ -382,22 +688,66 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     + intros. dependent inversion H2. reflexivity.
     + intros. dependent inversion H2. simpl.
       unfold var_sem. unfold env_lookup.
-      cut (forall Hb1 Hb2, unopt (bind (nth_error G1 n) (fun s1 : Scm =>
-        bind (findpos s1 (fun x : Name => if Db.Name_dec x a then true else false) 0)
-        (fun i : nat => bind (nth_error (projT1 h1) n) (fun h0 : list Value => nth_error h0 i)))) Hb1
-        = unopt (bind (nth_error (G2 ++ G1) (length G2 + n)) (fun s1 : Scm =>
-          bind (findpos s1 (fun x : Name => if Db.Name_dec x a then true else false) 0)
-          (fun i : nat => bind (nth_error (projT1 (env_app G2 G1 h2 h1)) (length G2 + n)) 
-            (fun h0 : list Value => nth_error h0 i)))) Hb2).
-      intro Hcut. apply Hcut.
-      rewrite e, e0. simpl. cut (s0 = s). intro Hs0. rewrite Hs0.
-      destruct (j_var_findpos a s j 0). destruct a1. rewrite H4. simpl.
-      destruct (env_scm_length _ h1 _ _ e). destruct a1. rewrite H5. simpl.
-      replace (nth_error (projT1 h2 ++ projT1 h1) (length G2 + n)) with (Some x0); simpl.
-      intros. apply unopt_pi.
-      rewrite <- H5. symmetry. replace (length G2) with (length (projT1 h2)).
-      apply nth_error_app2_eq. apply length_env.
-      rewrite nth_error_app2_eq in e0. rewrite e0 in e. injection e. auto.
+      cut (forall Hb1 Hb2, unopt (bind (nth_error (ctx_env G1 (projT1 h1)) n) 
+        (fun sh =>
+         bind (find (fun x => if Db.Name_dec (fst x) a then true else false) sh)
+         (fun p => ret (snd p)))) Hb1
+        = unopt (bind (nth_error (ctx_env (G2 ++ G1) (projT1 (env_app G2 G1 h2 h1))) (length G2 + n)) 
+         (fun sh =>
+          bind (find (fun x => if Db.Name_dec (fst x) a then true else false) sh)
+          (fun p => ret (snd p)))) Hb2).
+      intro Hcut. apply Hcut. unfold env_app. simpl.
+      rewrite nth_error_ctx_env_app_eq. apply unopt_pi.
+      destruct h1. simpl. apply Nat.eqb_eq. exact e1.
+      destruct h2. simpl. apply Nat.eqb_eq. exact e1.
+  Qed.
+*)
+
+  Definition env_of_list (G:Ctx) : forall (l: list Value), length l = length (List.concat G) -> env G.
+    intros. exists l. apply Nat.eqb_eq. intuition.
+  Defined.
+
+  Lemma bool_eq_pi : forall (b1 b2 : bool) (e1 e2 : b1 = b2), e1 = e2.
+  Proof.
+    intros b1 b2. enough (forall (x y : bool), x = y \/ x <> y).
+    destruct b1, b2. 
+    + intro. eapply (K_dec H (fun e => forall e2 : true = true, e = e2) _ e1). Unshelve.
+      simpl. intro. eapply (K_dec H (fun e => eq_refl = e) _ e2). Unshelve. reflexivity.
+    + intros. discriminate e1.
+    + intros. discriminate e1.
+    + intro. eapply (K_dec H (fun e => forall e2 : false = false, e = e2) _ e1). Unshelve.
+      simpl. intro. eapply (K_dec H (fun e => eq_refl = e) _ e2). Unshelve. reflexivity.
+    + intros. destruct (Bool.bool_dec x y); intuition.
+  Qed.
+
+  Lemma env_eq {G} (h1 h2: env G) : projT1 h1 = projT1 h2 -> h1 = h2.
+  Proof.
+    destruct h1. destruct h2. simpl. intro. subst. f_equal. apply bool_eq_pi.
+  Qed.
+
+  Lemma env_JMeq {G1} {G2} (h1: env G1) (h2: env G2): G1 = G2 -> projT1 h1 = projT1 h2 -> h1 ~= h2.
+  Proof.
+    intro. subst.
+    destruct h1. destruct h2. simpl. intro. subst. apply eq_JMeq. f_equal. apply bool_eq_pi.
+  Qed.
+
+  Lemma j_tm_sem_weak G G' t St (Ht : j_tm_sem G t St) :
+    j_tm_sem (G' ++ G) (tm_lift t (length G')) (fun h => St (subenv2 h)).
+  Proof.
+    elim Ht; try (intros; constructor).
+    elim G'. 
+    + replace Sia with (fun h => Sia (@subenv2 List.nil _ h)) in H. exact H. 
+      extensionality h. destruct h. f_equal. apply env_eq. reflexivity.
+    + intros. simpl. pose (H0' := jfs_tl a0 _ _ _ _ H0); clearbody H0'.
+      enough (forall A (f : A -> Prop) x y, x = y -> f x -> f y). generalize H0'. apply H1.
+      extensionality h. destruct h. f_equal. apply env_eq. unfold subenv2. simpl.
+      rewrite skipn_skipn. f_equal. repeat rewrite app_length. simpl. omega.
+      intros A f x y Hxy. rewrite Hxy. intuition.
+  Qed.
+
+  Lemma j_var_sem_j_var s x Sa (H : j_var_sem s x Sa) : j_var x s.
+  Proof.
+    induction H; constructor; intuition.
   Qed.
 
 End Evl.
@@ -579,6 +929,341 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
   Import Sql.
   Import Ev.
 
+  Inductive j_q_sem (d : Db.D) : forall G (s : Scm), prequery -> (env G -> Rel.R (List.length s)) -> Prop := 
+  | jqs_sel : forall G b tml btb c,
+      forall G0 Sbtb Sc Stml e,
+      j_btb_sem d G G0 btb Sbtb ->
+      j_cond_sem d (G0++G) c Sc ->
+      j_tml_sem (G0++G) (List.map fst tml) Stml ->
+      j_q_sem d G (List.map snd tml) (select b tml btb c) 
+        (fun h => let S1 := Sbtb h in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let S2 := Rel.sel S1 p in
+                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let S := cast _ _ e (Rel.sum S2 f)
+                  in if b then Rel.flat S else S)
+  | jqs_selstar : forall G b btb c,
+      forall G0 Sbtb Sc Stml e,
+      j_btb_sem d G G0 btb Sbtb ->
+      j_cond_sem d (G0++G) c Sc ->
+      j_tml_sem (G0++G) (tmlist_of_ctx G0) Stml ->
+      j_q_sem d G (List.concat G0) (selstar b btb c) 
+        (fun h => let S1 := Sbtb h in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let S2 := Rel.sel S1 p in
+                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let S := cast _ _ e (Rel.sum S2 f)
+                  in if b then Rel.flat S else S)
+  | jqs_union : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_q_sem d G s (qunion b q1 q2) 
+        (fun Vl => let S := Rel.plus (S1 Vl) (S2 Vl) in if b then S else Rel.flat S)
+  | jqs_inters : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_q_sem d G s (qinters b q1 q2) 
+        (fun Vl => let S := Rel.inter (S1 Vl) (S2 Vl) in if b then S else Rel.flat S)
+  | jqs_except : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_q_sem d G s (qexcept b q1 q2) 
+        (fun Vl => if b then Rel.minus (S1 Vl) (S2 Vl) else Rel.minus (Rel.flat (S1 Vl)) (S2 Vl))
+  with j_tb_sem (d : Db.D) : forall G (s : Scm), pretb -> (env G -> Rel.R (List.length s)) -> Prop :=
+  | jtbs_base : forall G x,
+      forall s (e : Db.db_schema d x = Some s), 
+      j_tb_sem d G s (tbbase x) (fun _ => Db.db_rel e)
+  | jtbs_query : forall G q,
+      forall s h,
+      j_q_sem d G s q h ->
+      j_tb_sem d G s (tbquery q) h
+  with j_cond_sem (d : Db.D) : forall G, precond -> (env G -> B) -> Prop :=
+  | jcs_true : forall G, j_cond_sem d G cndtrue (fun _ => btrue)
+  | jcs_false : forall G, j_cond_sem d G cndfalse (fun _ => bfalse)
+  | jcs_null : forall G b t, 
+      forall St,
+      j_tm_sem G t St ->
+      j_cond_sem d G (cndnull b t) (fun Vl => of_bool (match St Vl with None => b | _ => negb b end))
+  | jcs_pred : forall G n p tml,
+      forall Stml e,
+      j_tml_sem G tml Stml ->
+      j_cond_sem d G (cndpred n p tml) (fun Vl => Sem.sem_bpred _ p (to_list (Stml Vl)) (eq_trans (length_to_list _ _ _) e))
+  | jcs_memb : forall G b tml q, 
+      forall s Stml Sq (e : length tml = length s), (* Rel.T (length tml) = t Value (length s)) *)
+      j_tml_sem G tml Stml ->
+      j_q_sem d G s q Sq ->
+      let e' := f_equal Rel.T e in 
+      j_cond_sem d G (cndmemb b tml q) (fun Vl => 
+        let Stt := Rel.sel (Sq Vl) (fun rl => Vector.fold_right2 (fun r0 V0 acc => acc && is_btrue (veq r0 V0))%bool true _ rl (cast _ _ e' (Stml Vl))) in
+        let Suu := Rel.sel (Sq Vl) (fun rl => Vector.fold_right2 (fun r0 V0 acc => acc && negb (is_bfalse (veq r0 V0)))%bool true _ rl (cast _ _ e' (Stml Vl))) in
+        let ntt := Rel.card Stt in
+        let nuu := Rel.card Suu in
+        if (0 <? ntt) then of_bool b
+        else if (0 <? nuu) then bmaybe
+        else of_bool (negb b))
+  | jcs_ex : forall G q,
+      forall Sq,
+      j_in_q_sem d G q Sq ->
+      j_cond_sem d G (cndex q) (fun Vl => of_bool (Sq Vl))
+  | jcs_and : forall G c1 c2,
+      forall Sc1 Sc2,
+      j_cond_sem d G c1 Sc1 -> j_cond_sem d G c2 Sc2 ->
+      j_cond_sem d G (cndand c1 c2) (fun Vl => band (Sc1 Vl) (Sc2 Vl))
+  | jcs_or : forall G c1 c2,
+      forall Sc1 Sc2,
+      j_cond_sem d G c1 Sc1 -> j_cond_sem d G c2 Sc2 ->
+      j_cond_sem d G (cndor c1 c2) (fun Vl => bor (Sc1 Vl) (Sc2 Vl))
+  | jcs_not : forall G c0,
+      forall Sc0,
+      j_cond_sem d G c0 Sc0 ->
+      j_cond_sem d G (cndnot c0) (fun Vl => bneg (Sc0 Vl))
+  with j_btb_sem (d : Db.D) : forall G G', list (pretb * Scm) -> (env G -> Rel.R (list_sum (List.map (length (A:=Name)) G'))) -> Prop :=
+  | jbtbs_nil : forall G, j_btb_sem d G List.nil List.nil (fun _ => Rel.Rone) 
+  | jbtbs_cons : forall G T s' btb,
+      forall s G0 ST Sbtb e,
+      j_tb_sem d G s T ST ->
+      j_btb_sem d G G0 btb Sbtb -> length s = length s' ->
+      j_btb_sem d G (s'::G0) ((T,s')::btb) (fun Vl => cast _ _ e (Rel.times (ST Vl) (Sbtb Vl)))
+  with j_in_q_sem (d : Db.D) : forall G, prequery -> (env G -> bool) -> Prop :=
+  | jiqs_sel : forall G b tml btb c,
+      forall G0 Sbtb Sc Stml,
+      j_btb_sem d G G0 btb Sbtb ->
+      j_cond_sem d (G0++G) c Sc ->
+      j_tml_sem (G0++G) (List.map fst tml) Stml ->
+      j_in_q_sem d G (select b tml btb c) 
+        (fun h => let S1 := Sbtb h in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let S2 := Rel.sel S1 p in
+                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let S := Rel.sum S2 f
+                  in 0 <? Rel.card (if b then Rel.flat S else S))
+  | jiqs_selstar : forall G b btb c,
+      forall G0 Sbtb Sc,
+      j_btb_sem d G G0 btb Sbtb ->
+      j_cond_sem d (G0++G) c Sc ->
+      j_in_q_sem d G (selstar b btb c) 
+        (fun h => let S1 := Sbtb h in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let S2 := Rel.sel S1 p in
+(*                  let f  := fun _ => Vector.nil Rel.V) in
+                  let S := cast _ _ e (Rel.sum S2 f) 
+                  in if b then Rel.flat S else S)
+no, we can simplify *)
+                  0 <? Rel.card S2)
+  | jiqs_union : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_in_q_sem d G (qunion b q1 q2) 
+        (fun Vl => let S := Rel.plus (S1 Vl) (S2 Vl) in 0 <? Rel.card (if b then S else Rel.flat S))
+  | jiqs_inters : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_in_q_sem d G (qinters b q1 q2) 
+        (fun Vl => let S := Rel.inter (S1 Vl) (S2 Vl) in 0 <? Rel.card (if b then S else Rel.flat S))
+  | jiqs_except : forall G b q1 q2,
+      forall s S1 S2,
+      j_q_sem d G s q1 S1 -> j_q_sem d G s q2 S2 ->
+      j_in_q_sem d G (qexcept b q1 q2) 
+        (fun Vl => 0 <? Rel.card (if b then Rel.minus (S1 Vl) (S2 Vl) else Rel.minus (Rel.flat (S1 Vl)) (S2 Vl)))
+  .
+
+  Scheme jqs_ind_mut := Induction for j_q_sem Sort Prop
+  with jTs_ind_mut := Induction for j_tb_sem Sort Prop
+  with jcs_ind_mut := Induction for j_cond_sem Sort Prop
+  with jbTs_ind_mut := Induction for j_btb_sem Sort Prop
+  with jiqs_ind_mut := Induction for j_in_q_sem Sort Prop.
+
+  Combined Scheme j_sem_ind_mut from jqs_ind_mut, jTs_ind_mut, jcs_ind_mut, jbTs_ind_mut, jiqs_ind_mut.
+
+
+  Derive Inversion j_q_sel_sem with (forall d G s b tml btb c Ssel, j_q_sem d G s (select b tml btb c) Ssel) Sort Prop.
+  Derive Inversion j_q_selstar_sem with (forall d G s b btb c Sss, j_q_sem d G s (selstar b btb c) Sss) Sort Prop.
+  Derive Inversion j_q_union_sem with (forall d G s b q1 q2 Sq, j_q_sem d G s (qunion b q1 q2) Sq) Sort Prop.
+  Derive Inversion j_q_inters_sem with (forall d G s b q1 q2 Sq, j_q_sem d G s (qinters b q1 q2) Sq) Sort Prop.
+  Derive Inversion j_q_except_sem with (forall d G s b q1 q2 Sq, j_q_sem d G s (qexcept b q1 q2) Sq) Sort Prop.
+  Derive Inversion j_tb_base_sem with (forall d G s x ST, j_tb_sem d G s (tbbase x) ST) Sort Prop.
+  Derive Inversion j_tb_query_sem with (forall d G s q ST, j_tb_sem d G s (tbquery q) ST) Sort Prop.
+  Derive Inversion j_cons_btb_sem with (forall d G G' T s tl Scons, j_btb_sem d G G' ((T,s)::tl) Scons) Sort Prop.
+  Derive Inversion j_iq_sel_sem with (forall d G b tml btb c Ssel, j_in_q_sem d G (select b tml btb c) Ssel) Sort Prop.
+  Derive Inversion j_iq_selstar_sem with (forall d G b btb c Sss, j_in_q_sem d G (selstar b btb c) Sss) Sort Prop.
+  Derive Inversion j_iq_union_sem with (forall d G b q1 q2 Sq, j_in_q_sem d G (qunion b q1 q2) Sq) Sort Prop.
+  Derive Inversion j_iq_inters_sem with (forall d G b q1 q2 Sq, j_in_q_sem d G (qinters b q1 q2) Sq) Sort Prop.
+  Derive Inversion j_iq_except_sem with (forall d G b q1 q2 Sq, j_in_q_sem d G (qexcept b q1 q2) Sq) Sort Prop.
+
+  Lemma j_nil_btb_sem :
+    forall d G G' Snil (P : Prop),
+       (forall (G0 G0': Ctx), G0 = G -> G0' = G' -> List.nil = G0' ->
+        (fun (_:Ev.env G) => Rel.Rone) ~= Snil -> P) ->
+       j_btb_sem d G G' List.nil Snil -> P.
+  Proof.
+    intros.
+    enough (forall G0 G0' (btb0 : list (pretb * Scm)) 
+      (Snil0 : Ev.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
+        j_btb_sem d G0 G0' btb0 Snil0 ->
+        G0 = G -> G0' = G' -> List.nil = btb0 -> Snil0 ~= Snil -> P).
+    apply (H1 _ _ _ _ H0 eq_refl eq_refl eq_refl JMeq_refl).
+    intros G0 G0' btb0 Snil0 H0'.
+    destruct H0'; intros. eapply H; auto. rewrite H1 in H4. exact H4.
+    discriminate H5.
+  Qed.
+
+  Theorem j_sem_fun : forall d,
+    (forall G s q Sq, j_q_sem d G s q Sq -> forall s0 Sq0, j_q_sem d G s0 q Sq0 -> s = s0 /\ Sq ~= Sq0) /\
+    (forall G s T ST, j_tb_sem d G s T ST -> forall s0 ST0, j_tb_sem d G s0 T ST0 -> s = s0 /\ ST ~= ST0) /\
+    (forall G c Sc, j_cond_sem d G c Sc -> forall Sc0, j_cond_sem d G c Sc0 -> Sc ~= Sc0) /\
+    (forall G G' btb Sbtb, j_btb_sem d G G' btb Sbtb -> 
+      forall G0' Sbtb0, j_btb_sem d G G0' btb Sbtb0 -> G' = G0' /\ Sbtb ~= Sbtb0) /\
+    (forall G q Sq, j_in_q_sem d G q Sq -> forall Sq0, j_in_q_sem d G q Sq0 -> Sq ~= Sq0).
+  Proof.
+    intro. apply j_sem_ind_mut.
+    (* query *)
+    + intros.
+      (* the Coq refiner generates an ill-typed term if we don't give enough parameters to this eapply *)
+      eapply (j_q_sel_sem _ _ _ _ _ _ _ _ (fun _ _ s1 _ _ _ _ Ssel =>
+        _ = s1 /\ (fun h =>
+        let S1 := Sbtb h in
+        let p := fun Vl => is_btrue (Sc (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h)) in
+        let S2 := Rel.sel S1 p in
+        let f := fun Vl => Stml (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h) in
+        let S := cast _ _ e (Rel.sum S2 f) in
+        if b then Rel.flat S else S) ~= Ssel) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H13); clear H13; intros; subst.
+      clear H3 H12. apply (existT_eq_elim (JMeq_eq H4)); clear H4; intros; subst.
+      clear H3. destruct (H _ _ H5); subst. pose (H11 := H0 _ H9); clearbody H11. 
+      rewrite H4.
+      rewrite H11.
+      replace e0 with e. replace Stml0 with Stml.
+      split; reflexivity. apply (Ev.j_tml_sem_fun _ _ _ j1 _ H10). apply UIP.
+    + intros. eapply (j_q_selstar_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H12); clear H12; intros; subst.
+      clear H3 H11. apply (existT_eq_elim (JMeq_eq H4)); clear H4; intros; subst.
+      clear H3. destruct (H _ _ H6); subst. pose (H10 := H0 _ H8); clearbody H10. 
+      rewrite H4, H10. replace e0 with e. replace Stml0 with Stml.
+      split; reflexivity. apply (Ev.j_tml_sem_fun _ _ _ j1 _ H9). apply UIP.
+    + intros. eapply (j_q_union_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H10); clear H10; intros; subst.
+      clear H3 H2. apply (existT_eq_elim (JMeq_eq H5)); clear H5; intros; subst.
+      clear H2. destruct (H _ _ H4); subst. destruct (H0 _ _ H7); subst. intuition.
+    + intros. eapply (j_q_inters_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H10); clear H10; intros; subst.
+      clear H3 H2. apply (existT_eq_elim (JMeq_eq H5)); clear H5; intros; subst.
+      clear H2. destruct (H _ _ H4); subst. destruct (H0 _ _ H7); subst. intuition.
+    + intros. eapply (j_q_except_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H10); clear H10; intros; subst.
+      clear H3 H2. apply (existT_eq_elim (JMeq_eq H5)); clear H5; intros; subst.
+      clear H2. destruct (H _ _ H4); subst. destruct (H0 _ _ H7); subst. intuition.
+    (* table *)
+    + intros. eapply (j_tb_base_sem _ _ _ _ _ (fun _ _ _ _ _ => _) _ H). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H4); clear H4; intros; subst.
+      clear H1. apply (existT_eq_elim (JMeq_eq H2)); clear H2; intros; subst.
+      clear H H0 H1. generalize e, e0. rewrite e in e0. injection e0. intuition.
+      generalize e1. rewrite H. intro.
+      replace e3 with e2. reflexivity. apply UIP.
+    + intros. eapply (j_tb_query_sem _ _ _ _ _ (fun _ _ _ _ _ => _) _ H0). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H6); clear H6; intros; subst.
+      clear H2. apply (existT_eq_elim (JMeq_eq H3)); clear H3; intros; subst.
+      clear H1 H2. destruct (H _ _ H4); subst. intuition.
+    (* cond *)
+    + intros. inversion H. reflexivity.
+    + intros. inversion H. reflexivity.
+    + intros. inversion H. apply (existT_eq_elim H4); clear H4; intros; subst.
+      replace St0 with St. reflexivity. apply (Ev.j_tm_sem_fun _ _ _ j _ H2).
+    + intros. inversion H. apply (existT_eq_elim H3); clear H3; intros; subst.
+      apply (existT_eq_elim H5); clear H5; intros; subst. 
+      replace e0 with (@eq_refl _ (length tml)).
+      replace Stml0 with Stml. reflexivity.
+      apply (Ev.j_tml_sem_fun _ _ _ j _ H2). apply UIP.
+    + intros. inversion H0. apply (existT_eq_elim H6); clear H6; intros; subst. clear H6.
+      destruct (H _ _ H7). subst. rewrite H2.
+      replace Stml0 with Stml. replace e'0 with e'. reflexivity.
+      apply UIP. apply (Ev.j_tml_sem_fun _ _ _ j _ H4).
+    + intros. inversion H0. apply (existT_eq_elim H3); clear H3; intros; subst. clear H3.
+      rewrite (H _ H4). reflexivity.
+    + intros. inversion H1. apply (existT_eq_elim H5); clear H5; intros; subst.
+      rewrite (H _ H6). rewrite (H0 _ H7). reflexivity.
+    + intros. inversion H1. apply (existT_eq_elim H5); clear H5; intros; subst.
+      rewrite (H _ H6). rewrite (H0 _ H7). reflexivity.
+    + intros. inversion H0. apply (existT_eq_elim H3); clear H3; intros; subst.
+      rewrite (H _ H4). reflexivity.
+    (* btb *)
+    + intros. eapply (j_nil_btb_sem _ _ _ _ _ _ H). Unshelve.
+      intros; simpl; subst. intuition.
+    + intros. eapply (j_cons_btb_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ _  => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H12); clear H12; intros; subst.
+      clear H11 H3. apply (existT_eq_elim (JMeq_eq H4)); clear H4; intros; subst.
+      clear H3. destruct (H _ _ H6); subst. destruct (H0 _ _ H8); subst. intuition.
+      rewrite H5. replace e with e1. reflexivity. apply UIP.
+    (* inner query *)
+    + intros. eapply (j_iq_sel_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ Ssel =>
+        (fun h =>
+         let S1 := Sbtb h in
+         let p := fun Vl => is_btrue (Sc (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h)) in
+         let S2 := Rel.sel S1 p in
+         let f := fun Vl => Stml (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h) in
+         let S := Rel.sum S2 f in 
+         0 <? Rel.card (if b then Rel.flat S else S)) ~= Ssel) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H11); clear H11; intros; subst.
+      clear H2 H3. destruct (H _ _ H4); subst. pose (H9 := H0 _ H7); clearbody H9. 
+      rewrite H3, H9. replace Stml0 with Stml. reflexivity.
+      apply (Ev.j_tml_sem_fun _ _ _ j1 _ H8).
+    + intros. eapply (j_iq_selstar_sem _ _ _ _ _ _ (fun _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H9); clear H9; intros; subst.
+      clear H2 H4. destruct (H _ _ H3); subst. pose (H7 := H0 _ H6); clearbody H7. 
+      rewrite H4, H7. reflexivity.
+    + intros. eapply (j_iq_union_sem _ _ _ _ _ _ (fun _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H9); clear H9; intros; subst.
+      clear H2 H4. destruct (H _ _ H3); subst. destruct (H0 _ _ H6); subst. intuition.
+    + intros. eapply (j_iq_inters_sem _ _ _ _ _ _ (fun _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H9); clear H9; intros; subst.
+      clear H2 H4. destruct (H _ _ H3); subst. destruct (H0 _ _ H6); subst. intuition.
+    + intros. eapply (j_iq_except_sem _ _ _ _ _ _ (fun _ _ _ _ _ _ => _) _ H1). Unshelve.
+      intros; simpl; subst. apply (existT_eq_elim H9); clear H9; intros; subst.
+      clear H2 H4. destruct (H _ _ H3); subst. destruct (H0 _ _ H6); subst. intuition.
+  Qed.
+
+  Theorem j_sem_fun_dep : forall d,
+    (forall G s q Sq, j_q_sem d G s q Sq -> 
+      forall G0 s0 q0 Sq0, G = G0 -> q = q0 -> j_q_sem d G0 s0 q0 Sq0 -> s = s0 /\ Sq ~= Sq0) /\
+    (forall G s T ST, j_tb_sem d G s T ST -> 
+      forall G0 s0 T0 ST0, G = G0 -> T = T0 -> j_tb_sem d G0 s0 T0 ST0 -> s = s0 /\ ST ~= ST0) /\
+    (forall G c Sc, j_cond_sem d G c Sc -> 
+      forall G0 c0 Sc0, G = G0 -> c = c0 -> j_cond_sem d G0 c0 Sc0 -> Sc ~= Sc0) /\
+    (forall G G' btb Sbtb, j_btb_sem d G G' btb Sbtb -> 
+      forall G0 G0' btb0 Sbtb0, G = G0 -> btb = btb0 -> j_btb_sem d G0 G0' btb0 Sbtb0 -> 
+      G' = G0' /\ Sbtb ~= Sbtb0) /\
+    (forall G q Sq, j_in_q_sem d G q Sq -> 
+      forall G0 q0 Sq0, G = G0 -> q = q0 -> j_in_q_sem d G0 q0 Sq0 -> Sq ~= Sq0).
+  Proof.
+    intro. decompose [and] (j_sem_fun d). split.
+      intros. subst. apply (H _ _ _ _ H3 _ _ H7).
+    split.
+      intros. subst. apply (H1 _ _ _ _ H3 _ _ H7).
+    split.
+      intros. subst. apply (H0 _ _ _ H3 _ H7).
+    split.
+      intros. subst. apply (H2 _ _ _ _ H3 _ _ H7).
+    intros. subst. apply (H4 _ _ _ H3 _ H7).
+  Qed.
+
+  Corollary jT_sem_fun_dep : forall d G s T ST, j_tb_sem d G s T ST -> 
+      forall G0 s0 T0 ST0, G = G0 -> T = T0 -> j_tb_sem d G0 s0 T0 ST0 -> s = s0 /\ ST ~= ST0.
+  Proof.
+    intro. decompose [and] (j_sem_fun_dep d). exact H1.
+  Qed.
+
+  Corollary jq_sem_fun_dep : forall d G s q Sq, j_q_sem d G s q Sq -> 
+      forall G0 s0 q0 Sq0, G = G0 -> q = q0 -> j_q_sem d G0 s0 q0 Sq0 -> s = s0 /\ Sq ~= Sq0.
+  Proof.
+    intro. decompose [and] (j_sem_fun_dep d). exact H.
+  Qed.
+
+  Corollary jc_sem_fun_dep : forall d G c Sc, j_cond_sem d G c Sc -> 
+      forall G0 c0 Sc0, G = G0 -> c = c0 -> j_cond_sem d G0 c0 Sc0 -> Sc ~= Sc0.
+  Proof.
+    intro. decompose [and] (j_sem_fun_dep d). exact H0.
+  Qed.
+
+(*
   Fixpoint q_sem d G Q s (HWF: j_query d G Q s) (h : env G) {struct HWF}
     : Db.Rel.R (List.length s)
   with tb_sem d G (x : bool) T s (HWF : j_tb d G T s) (h : env G) {struct HWF}
@@ -588,7 +1273,7 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
   with btb_sem d G btb G1 (HWF : j_btb d G btb G1) (h : env G) {struct HWF}
     : Db.Rel.R (List.length (List.concat G1))
   with inner_q_sem d G Q (HWF: j_inquery d G Q) (h : env G) {struct HWF}
-    : { n : nat & Db.Rel.R n }.
+    : bool.
   * refine ((match HWF in (j_query _ G0 Q0 s0) return (G = G0 -> Q = Q0 -> s = s0 -> Db.Rel.R (List.length s)) with
         | j_select _ _ _ _ _ _ _ _ _ _ _ _ => fun eqG eqQ eqS => _
         | j_selstar _ _ _ _ _ _ _ _ _ _ _ => fun eqG eqQ eqS => _
@@ -599,15 +1284,20 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
       eq_refl eq_refl eq_refl).
     all: subst.
     + refine (let S1 := btb_sem _ _ _ _ j h in
-        let p := fun _ => true in
-        let S2 := Db.Rel.sel S1 p in _).
+        let p := fun (Vl : Db.Rel.T (list_sum (List.map (@length Name) c0))) => 
+          Sem.is_btrue (cond_sem _ _ _ j0 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h)) in
+        let S2 := Db.Rel.sel S1 (cast _ _ _ p) in _).
       refine (let f := fun (Vl : Db.Rel.T (list_sum (List.map (length (A:=Name)) c0))) =>
         v_tml_sem _ _ j1 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h) in _).
       case (sumbool_of_bool b); intro.
       - (* DISTINCT *)
-        eapply Db.Rel.flat. eapply (Db.Rel.sum S2).
-        rewrite cmap_length. rewrite cmap_length in f. rewrite <- length_concat_list_sum in f. exact f.
-      - eapply (Db.Rel.sum S2). rewrite cmap_length. rewrite cmap_length in f. rewrite length_concat_list_sum. exact f.
+        eapply Db.Rel.flat. eapply (Db.Rel.sum S2). eapply (cast _ _ _ f).
+        Unshelve.
+        ** rewrite length_concat_list_sum. reflexivity.
+        ** repeat rewrite cmap_length. rewrite length_concat_list_sum. reflexivity.
+      - eapply (Db.Rel.sum S2). eapply (cast _ _ _ f).
+        Unshelve.
+        repeat rewrite cmap_length. rewrite length_concat_list_sum. reflexivity.
     + refine (let S1 := btb_sem _ _ _ _ j h in
         let p := fun (Vl : Db.Rel.T (list_sum (List.map (@length Name) c0))) => 
           Sem.is_btrue (cond_sem _ _ _ j0 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h))
@@ -667,7 +1357,7 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
               else if (0 <? nuu) then bmaybe
               else of_bool (negb b)).
       rewrite e. reflexivity.
-    + refine (of_bool (0 <? Rel.card (projT2 (inner_q_sem _ _ _ j h)))).
+    + refine (of_bool (inner_q_sem _ _ _ j h)).
     + apply (band (cond_sem _ _ _ j h) (cond_sem _ _ _ j0 h)).
     + apply (bor (cond_sem _ _ _ j h) (cond_sem _ _ _ j0 h)).
     + apply (bneg (cond_sem _ _ _ j h)).
@@ -681,7 +1371,7 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
     + apply Db.Rel.Rone.
     + rewrite concat_cons. rewrite app_length. rewrite <- e.
       apply (Db.Rel.times (tb_sem _ _ false _ _ j h) (btb_sem _ _ _ _ j0 h)).
-  * refine ((match HWF in (j_inquery _ G0 Q0) return (G = G0 -> Q = Q0 -> { n : nat & Db.Rel.R n}) with
+  * refine ((match HWF in (j_inquery _ G0 Q0) return (G = G0 -> Q = Q0 -> bool) with
         | j_inselect _ _ _ _ _ _ _ _ _ _ => fun eqG eqQ => _
         | j_inselstar _ _ _ _ _ _ _ _ => fun eqG eqQ => _
         | j_inunion _ _ _ _ _ _ _ _ => fun eqG eqQ => _
@@ -691,30 +1381,41 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
       eq_refl eq_refl).
     all: subst.
     + refine (let S1 := btb_sem _ _ _ _ j h in
-        let p := fun _ => true in
-        let S2 := Db.Rel.sel S1 p in _).
+        let p := fun (Vl : Db.Rel.T (list_sum (List.map (@length Name) c0))) => 
+          Sem.is_btrue (cond_sem _ _ _ j0 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h)) in
+        let S2 := Db.Rel.sel S1 (cast _ _ _ p) in _).
       refine (let f := fun (Vl : Db.Rel.T (list_sum (List.map (@length Name) c0))) =>
         v_tml_sem _ _ j1 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h) in _).
+(*  we don't need all this: whether it's distinct or not, it's the same cardinality
       exists (List.length (List.map fst l)).
       case (sumbool_of_bool b); intro.
       - (* DISTINCT *)
         eapply Db.Rel.flat. eapply (Db.Rel.sum S2).
         eapply (cast _ _ _ f). Unshelve. rewrite length_concat_list_sum. reflexivity.
       - eapply (Db.Rel.sum S2). eapply (cast _ _ _ f). Unshelve. rewrite length_concat_list_sum. reflexivity.
+*)    
+      refine (0 <? Rel.card (Rel.sum S2 (cast _ _ _ f))). Unshelve.
+      - rewrite length_concat_list_sum. reflexivity.
+      - rewrite length_concat_list_sum. reflexivity.
     + refine (let S1 := btb_sem _ _ _ _ j h in
         let p := fun (Vl : Db.Rel.T (list_sum (List.map (@length Name) c0))) => 
           Sem.is_btrue (cond_sem _ _ _ j0 (Ev.env_app _ _ (Ev.env_of_tuple c0 Vl) h))
         in
         let S2 := Db.Rel.sel S1 (cast _ _ _ p) in _). Unshelve. Focus 2.
-      apply (@eq_rect _ _ (fun x => (Rel.T x -> bool) = (Rel.T (length (concat c0)) -> bool)) eq_refl _ (length_concat_list_sum _ c0)).
+      rewrite length_concat_list_sum. reflexivity.
       refine (let f := fun (_ : Db.Rel.T (list_sum (List.map (@length Name) c0))) =>
         Vector.nil Rel.V in _).
+(*
       exists 0.
       case (sumbool_of_bool b); intro.
       - (* DISTINCT *)
         eapply Db.Rel.flat. eapply (Db.Rel.sum S2). intro. apply f.
         rewrite <- length_concat_list_sum. apply X.
       - eapply (Db.Rel.sum S2). intro. apply f. rewrite <- length_concat_list_sum. apply X.
+*)
+      refine (0 <? Rel.card (Rel.sum S2 (cast _ _ _ f))). Unshelve.
+      rewrite length_concat_list_sum. reflexivity.
+(*
     + exists (List.length s). case (sumbool_of_bool b); intro.
       - apply (Db.Rel.plus (q_sem _ _ _ _ j h) (q_sem _ _ _ _ j0 h)).
       - apply (Db.Rel.flat (Db.Rel.plus (q_sem _ _ _ _ j h) (q_sem _ _ _ _ j0 h))).
@@ -724,8 +1425,12 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
     + exists (List.length s). case (sumbool_of_bool b); intro.
       - apply (Db.Rel.minus (q_sem _ _ _ _ j h) (q_sem _ _ _ _ j0 h)).
       - apply (Db.Rel.minus (Db.Rel.flat (q_sem _ _ _ _ j h)) (q_sem _ _ _ _ j0 h)).
-  Defined.
-
+*)
+    + refine (((0 <? Rel.card (q_sem _ _ _ _ j h)) || (0 <? Rel.card (q_sem _ _ _ _ j0 h)))%bool).
+    + refine (0 <? Rel.card (Rel.inter (q_sem _ _ _ _ j h) (q_sem _ _ _ _ j0 h))).
+    + refine (0 <? Rel.card (Rel.minus (q_sem _ _ _ _ j h) (q_sem _ _ _ _ j0 h))).
+    Defined.
+*)
   Lemma eq_rect_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect x P p x eq_refl = p. 
   reflexivity.
   Qed.
@@ -736,6 +1441,7 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
   rewrite H. reflexivity.
   Qed.
 
+(*
   Theorem sem_pi : forall d,
     (forall c p s j h s' j' h', h ~= h' -> s = s' /\ q_sem d c p s j h ~= q_sem d c p s' j' h') /\
     (forall c p s j h x s' j' h', h ~= h' -> s = s' /\ tb_sem d c x p s j h ~= tb_sem d c x p s' j' h') /\
@@ -754,8 +1460,12 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
     intros. simpl. repeat rewrite eq_rect_r_eq_refl. repeat rewrite H7.
     destruct (sumbool_of_bool x).
     - apply eq_JMeq. f_equal. f_equal. f_equal. f_equal. f_equal. extensionality Vl.
+      f_equal. apply JMeq_eq. apply IHc. rewrite H5. reflexivity.
+      f_equal. extensionality Vl.
       apply JMeq_eq. apply Ev.v_tml_sem_pi. rewrite H5. reflexivity.
     - apply eq_JMeq. f_equal. f_equal. f_equal. f_equal. extensionality Vl.
+      f_equal. apply JMeq_eq. apply IHc. rewrite H5. reflexivity.
+      f_equal. extensionality Vl.
       apply JMeq_eq. apply Ev.v_tml_sem_pi. rewrite H5. reflexivity.
   + intros G btb G' c s x Hbtb IHbtb Hc IHc e Html h s' j'. rewrite e.
     dependent inversion j' with 
@@ -896,12 +1606,10 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
     intros. destruct (IHbtb _ _ j _ H0).
     generalize j, j0, j1, H6. clear j j0 j1 H6. rewrite <- H5.
     intros. simpl. repeat rewrite eq_rect_r_eq_refl. repeat rewrite H6.
-    apply eq_JMeq. f_equal.
-    destruct (sumbool_of_bool x).
-    - f_equal. f_equal. f_equal. extensionality Vl.
-      apply JMeq_eq. apply Ev.v_tml_sem_pi. rewrite H0. reflexivity.
-    - f_equal. f_equal. extensionality Vl.
-      apply JMeq_eq. apply Ev.v_tml_sem_pi. rewrite H0. reflexivity.
+    apply eq_JMeq. f_equal. f_equal. f_equal.
+    - f_equal. f_equal. extensionality Vl. f_equal. apply JMeq_eq. apply IHc.
+      rewrite H0. reflexivity.
+    - f_equal. extensionality Vl. apply JMeq_eq. apply Ev.v_tml_sem_pi. rewrite H0. reflexivity.
   + intros G btb G' c x Hbtb IHbtb Hc IHc j' h .
     dependent inversion j' with 
       (fun G0 Q0 Hinv => forall h', h ~= h' ->
@@ -909,12 +1617,9 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db) (Ev : EV Db Sql).
           inner_q_sem d G0 Q0 Hinv h').
     intros. destruct (IHbtb _ _ j _ H0).
     generalize j, j0, H5. clear j j0 H5. rewrite <- H4.
-    intros. simpl. repeat rewrite eq_rect_r_eq_refl. repeat rewrite H5. rewrite H0. apply eq_JMeq.
-    f_equal. destruct (sumbool_of_bool x).
-    - f_equal. f_equal. f_equal. f_equal. extensionality Vl. f_equal.
-      apply JMeq_eq. apply IHc. reflexivity.
-    - f_equal. f_equal. f_equal. extensionality Vl. f_equal.
-      apply JMeq_eq. apply IHc. reflexivity.
+    intros. simpl. repeat rewrite eq_rect_r_eq_refl. repeat rewrite H5. rewrite H0.
+    apply eq_JMeq. f_equal. f_equal. f_equal. f_equal. f_equal. extensionality Vl.
+    f_equal. apply JMeq_eq. apply IHc. reflexivity.
   + intros G x Q1 Q2 s HQ1 IHQ1 HQ2 IHQ2 j' h.
     dependent inversion j' with 
       (fun G0 Q0 Hinv => forall h', h ~= h' ->
@@ -973,5 +1678,7 @@ Corollary inner_q_sem_pi :
 Proof.
   intro d. decompose [and] (sem_pi d). assumption.
 Qed.
+
+*)
 
 End SQLSemantics.
