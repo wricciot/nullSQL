@@ -179,11 +179,13 @@ Module Type SQL (Db : DB).
   | j_null  : j_tm g tmnull
   | j_tmvar : forall n a s, List.nth_error g n = Some s -> j_var a s -> j_tm g (tmvar (n,a)).
 
-  Inductive j_db (d : Db.D) : Prop := .
+  (* this was put into place to allow for well-formedness conditions on the DB,
+     but we don't have any *)
+  Inductive j_db (d : Db.D) : Prop := jd_intro : j_db d.
 
   Definition j_tml (g : Ctx) (tl : list pretm) : Type := forall t, List.In t tl -> j_tm g t.
 
-  Variable dflist : forall A, list A -> Prop.
+  Definition dflist : forall A, list A -> Prop := List.NoDup.
 
   Inductive j_query (d : Db.D) : Ctx -> prequery -> Scm -> Prop :=
   | j_select :

@@ -1,9 +1,10 @@
 Require Import Eqdep Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool 
-  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance.
+  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance EqdepFacts.
 
 Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
 
-Axiom UIP : forall A (a : A) (e : a = a), e = eq_refl. 
+  (* rename UIP_refl to UIP until we change all occurrences in this file *)
+  Definition UIP : forall A (a : A) (e : a = a), e = eq_refl := UIP_refl.
   Lemma eq_rect_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect x P p x eq_refl = p. 
   reflexivity.
   Qed.
@@ -34,6 +35,7 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
   Module SQLSem3 := SQLSemantics Db S3 Sql Ev.
 
   (* just some trivial operations on names *)
+  (* they will be moved to a separate module of names, which we may then assume *)
   Axiom freshlist : nat -> list Name.
   Axiom p_freshlist : forall n, List.NoDup (freshlist n).
   Axiom length_freshlist : forall n, length (freshlist n) = n.
@@ -113,40 +115,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
   intros d g b btm btb c s P Hinv H. dependent inversion H.
   eapply Hinv. trivial.
   Qed.
-
-(*
-  Lemma sem3_pred_ttrue : forall d G n p tml Hdb Html e h,
-    SQLSem3.cond_sem d G (cndpred n p tml) (j_cndpred d G n p tml Hdb Html e) h = ttrue -> 
-    exists vl Hvl, monadic_map (fun val => val) (Ev.tml_sem G tml Html h) = Some vl /\ p vl Hvl = true.
-  simpl. intros d G n p tml Hdb Html e h. destruct e.
-  repeat rewrite eq_rect_eq_refl. repeat rewrite eq_rect_r_eq_refl.
-  apply S3.sem_bpred_elim.
-  - intros cl e0 Hcl Hp. exists cl. exists Hcl. split. rewrite e0. reflexivity.
-    destruct (p cl Hcl) eqn:e1; auto; simpl in Hp; discriminate Hp.
-  - intros _ Hfalse. discriminate Hfalse.
-  Qed.
-
-  Lemma sem3_pred_tfalse : forall d G n p tml Hdb Html e h,
-    SQLSem3.cond_sem d G (cndpred n p tml) (j_cndpred d G n p tml Hdb Html e) h = tfalse -> 
-    exists vl Hvl, monadic_map (fun val => val) (Ev.tml_sem G tml Html h) = Some vl /\ p vl Hvl = false.
-  simpl. intros d G n p tv Hdb Html e h. destruct e. 
-  repeat rewrite eq_rect_eq_refl. repeat rewrite eq_rect_r_eq_refl.
-  apply S3.sem_bpred_elim.
-  - intros cl e0 Hcl Hp. exists cl. exists Hcl. split. rewrite e0. reflexivity.
-    destruct (p cl Hcl) eqn:e1; auto; simpl in Hp; discriminate Hp.
-  - intros _ Hfalse. discriminate Hfalse.
-  Qed.
-
-  Lemma sem3_pred_unknown : forall d G n p tml Hdb Html e h,
-    SQLSem3.cond_sem d G (cndpred n p tml) (j_cndpred d G n p tml Hdb Html e) h = unknown ->
-    monadic_map (fun val => val) (Ev.tml_sem G tml Html h) = @None (list BaseConst).
-  simpl. intros d G n p tv Hdb Html e h. destruct e. 
-  repeat rewrite eq_rect_eq_refl. repeat rewrite eq_rect_r_eq_refl.
-  apply S3.sem_bpred_elim.
-  + intros cl e0 Hcl. destruct (p cl Hcl); simpl; intro Hfalse; discriminate Hfalse.
-  + intros H _. exact H.
-  Qed.
-*)
 
   Lemma S2_is_btrue_and_intro (b1 b2 : bool) :
     S2.is_btrue b1 = true -> S2.is_btrue b2 = true ->
@@ -230,87 +198,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
     destr_tribool.
   Qed.
 
-(*
-  Lemma sem2_pred_false_aux (d : D) (g : Ctx) tml :
-    forall Hc Html h, monadic_map (fun val => val) (Ev.tml_sem g tml Html h) = @None (list BaseConst) ->
-    SQLSem2.cond_sem d g
-     (List.fold_right (fun (t : pretm) (acc : precond) => (t IS NOT NULL) AND acc) (TRUE) tml) Hc h = false.
-  Proof.
-    intros Hc Html h Hmap.
-    cut (forall t0 Ht0 tml0, Ev.tm_sem g t0 Ht0 h = None -> List.In t0 tml0 -> 
-      forall Hc0, SQLSem2.cond_sem d g (List.fold_right (fun t1 acc => (t1 IS NOT NULL) AND acc) (TRUE) tml0) Hc0 h = false).
-    + intro Hcut. cut (exists t, exists (Hin : List.In t tml), Ev.tm_sem g t (Html _ Hin) h = None).
-      - intro H. decompose record H. apply (Hcut _ _ _ H1 x0).
-      - generalize Html, Hmap. clear Html Hmap Hcut. elim tml.
-        * simpl. unfold ret. intros Html Hfalse. discriminate Hfalse.
-        * intros hd tl IH Html. simpl. 
-          destruct (monadic_map (fun val => val) (Ev.tml_sem g tl (fun t Ht => Html t (or_intror Ht)) h)) eqn:e.
-          ++ simpl. 
-             assert (forall x, x = Ev.tm_sem g hd (Html hd (or_introl eq_refl)) h -> 
-                      bind x (fun b : BaseConst => ret (b :: l)) = None ->
-                      exists (t : pretm) (Hin : hd = t \/ List.In t tl), Ev.tm_sem g t (Html t Hin) h = None).
-            -- intro x. destruct x.
-              ** simpl. unfold ret. intros _ Hfalse. discriminate Hfalse.
-              ** simpl. intros. exists hd. eexists. rewrite H. reflexivity.
-            -- apply H. reflexivity.
-        ++ intros _. destruct (IH _ e). destruct H. exists x. eexists. exact H.
-    + intros t0 Ht0 tml0 Hnone. generalize h, Hnone. clear h Hmap Hnone. elim tml0.
-      - simpl. intros h Hnone Hfalse. contradiction Hfalse.
-      - simpl. intros t1 tml1 IH h Hnone Hin Hc0.
-        generalize h, Ht0, Hnone. clear h Hnone.
-        dependent inversion Hc0 with (fun G0 c1 Hinv => forall h Ht0, Ev.tm_sem G0 t0 Ht0 h = None ->
-            SQLSem2.cond_sem d G0 c1 Hinv h = false).
-        intros. simpl. repeat rewrite eq_rect_r_eq_refl. destruct Hin.
-        * replace (SQLSem2.cond_sem d g (t1 IS NOT NULL) j h) with false. reflexivity.
-          generalize h Ht1 H0. clear h Ht1 H0.
-          dependent inversion j with (fun G1 c3 Hinv => 
-            forall h Ht1, Ev.tm_sem G1 t0 Ht1 h = None -> false = SQLSem2.cond_sem d G1 c3 Hinv h).
-          rewrite <- H3. intros. simpl. repeat rewrite eq_rect_r_eq_refl.
-          rewrite <- (Ev.tm_sem_pi g t1 Ht1 h j2); auto. rewrite H4. reflexivity.
-        * replace (SQLSem2.cond_sem d g (List.fold_right (fun t2 acc => (t2 IS NOT NULL) AND acc) (TRUE) tml1) j0 h) with false. 
-          apply Bool.andb_false_intro2. reflexivity.
-          symmetry. apply IH. rewrite <- H0. apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-          exact H3.
-  Qed.
-
-  Lemma sem2_pred_true_aux (d : D) (g : Ctx) tml Hc Html x h:
-    monadic_map (fun val => val) (Ev.tml_sem g tml Html h) = Some x ->
-    SQLSem2.cond_sem d g
-     (List.fold_right (fun (t : pretm) (acc : precond) => (t IS NOT NULL) AND acc) (TRUE) tml) Hc h = true.
-  Proof.
-    intro Hmap.
-    enough (forall t0 Ht0, List.In t0 tml -> exists v, Ev.tm_sem g t0 Ht0 h = Some v).
-    + generalize Hc H. clear H Hmap Html Hc. elim tml; simpl; intros.
-      - cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d g (TRUE) Hc h0 = true).
-        * intro H'. apply H'. reflexivity.
-        * dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-          intros. constructor.
-      - cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d g ((a IS NOT NULL) AND List.fold_right (fun (t : pretm) (acc : precond) => 
-              (t IS NOT NULL) AND acc) (TRUE) l) Hc h0 = true).
-        * intro H'. apply H'. reflexivity.
-        * dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-          intros. simpl. repeat rewrite eq_rect_r_eq_refl. rewrite H2. clear H2 h0.
-          apply S2_is_btrue_and_intro.
-          ++ cut (forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d g (a IS NOT NULL) j h0) = true).
-            -- intro H'. apply H'. reflexivity.
-            -- dependent inversion j with (fun G0 c0 Hinv => forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d G0 c0 Hinv h0) = true).
-              intros. simpl. repeat rewrite eq_rect_r_eq_refl.
-              destruct (H0 _ j2 (or_introl eq_refl)). rewrite H5. rewrite H8. reflexivity.
-          ++ apply H. intros. apply H0. right. exact H2.
-    + generalize x Html Hmap; clear x Html Hmap. elim tml; simpl; intros.
-      - contradiction H.
-      - destruct H0.
-        * destruct (monadic_map (fun val => val) (Ev.tml_sem g l (fun t H => Html t (or_intror H)) h)) in Hmap; simpl in Hmap. Focus 2. discriminate Hmap.
-          destruct (Ev.tm_sem g a (Html a (@or_introl _ (List.In a l) eq_refl)) h) eqn:e; simpl in Hmap. Focus 2. discriminate Hmap.
-          generalize Ht0. clear Ht0. rewrite <- H0. intro Ha. exists b. rewrite <- e.
-          apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-        * assert (j_tml g l). intros t1 Ht1. apply Html. right. exact Ht1.
-          destruct (monadic_map (fun val => val) (Ev.tml_sem g l (fun t H => Html t (or_intror H)) h)) eqn:e; simpl in Hmap. Focus 2. discriminate Hmap.
-          apply (H l0 X). Focus 2. exact H0. rewrite <- e.
-          f_equal. apply JMeq_eq. apply Ev.tml_sem_pi. reflexivity.
-  Qed.
-*)
-
   Theorem j_query_j_db : forall d G Q s, j_query d G Q s -> j_db d.
   intros d G Q s HWF.
   eapply (jq_ind_mut _ 
@@ -322,70 +209,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
           _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ HWF).
   Unshelve. all: simpl; intros; auto.
   Qed.
-
-(*
-  Lemma fold_v_tml_sem1 g tml Html h :
-           (fun rl => fold_right2 (fun r0 V0 acc => 
-              acc && S2.is_btrue (S2.veq r0 V0))%bool true (length tml) rl (Ev.v_tml_sem g tml Html h))
-           = (fun rl => fold_right2 (fun r0 V0 acc => 
-              acc && S3.is_btrue (S3.veq r0 V0))%bool true (length tml) rl (Ev.v_tml_sem g tml Html h)).
-  Proof.
-    extensionality rl.
-    eapply (Vector.rect2 (fun n rl0 tml0 => 
-      (fold_right2 (fun (r0 V0 : option BaseConst) (acc : bool) => (acc && S2.is_btrue (S2.veq r0 V0))%bool) true n rl0 tml0 =
-       fold_right2 (fun (r0 V0 : option BaseConst) (acc : bool) => (acc && S3.is_btrue (S3.veq r0 V0))%bool) true n rl0 tml0)) 
-      _ _ rl (Ev.v_tml_sem g tml Html h)). Unshelve.
-    + reflexivity.
-    + intros n v1 v2 IH x1 x2. simpl. f_equal.
-      - apply IH.
-      - unfold S2.veq, S3.veq. destruct x1, x2; try reflexivity. destruct (c_eq b b0); reflexivity.
-  Qed.
-*)
-
-(* this is false 
-  Lemma fold_v_tml_sem2 g tml Html h :
-           (fun rl => fold_right2 (fun r0 V0 acc => 
-              acc && negb (S2.is_bfalse (S2.veq r0 V0)))%bool true (length tml) rl (Ev.v_tml_sem g tml Html h))
-           = (fun rl => fold_right2 (fun r0 V0 acc => 
-              acc && negb (S3.is_bfalse (S3.veq r0 V0)))%bool true (length tml) rl (Ev.v_tml_sem g tml Html h)).
-  Proof.
-    extensionality rl.
-    eapply (Vector.rect2 (fun n rl0 tml0 => 
-      (fold_right2 (fun (r0 V0 : option BaseConst) (acc : bool) => (acc && negb (S2.is_bfalse (S2.veq r0 V0)))%bool) true n rl0 tml0 =
-       fold_right2 (fun (r0 V0 : option BaseConst) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq r0 V0)))%bool) true n rl0 tml0)) 
-      _ _ rl (Ev.v_tml_sem g tml Html h)). Unshelve.
-    + reflexivity.
-    + intros n v1 v2 IH x1 x2. simpl. f_equal.
-      - apply IH.
-      - unfold S2.veq, S3.veq. destruct x1, x2; try reflexivity. destruct (c_eq b b0); reflexivity.
-        unfold S2.
-  Qed.
-*)
-
-(*
-  Lemma cond_sem_ex_selstar d g q s Hs Hq tml Hff Hc h :
-    0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in ((t IS NULL) OR cndeq t (tmvar (1, a))) AND acc) 
-                          (TRUE) (combine tml s)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s :: List.nil) (cast _ _ Hs Vl)) h)))) = false ->
-    S2.is_btrue (SQLSem2.cond_sem d g 
-     (NOT (EXISTS (SELECT * FROM tbquery (ttquery d q) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in ((t IS NULL) OR cndeq t (tmvar (1, a))) AND acc) 
-              (TRUE) (combine tml s)))) Hff h) = true.
-  Proof.
-    intros Hmain.
-    dependent inversion Hff with (fun G0 c0 Hinv => forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d G0 c0 Hinv h0) = true).
-    intros. rewrite H0. clear h0 H0. simpl. repeat rewrite eq_rect_r_eq_refl.
-    dependent inversion j with (fun G0 c0 Hinv => forall h0, h0 ~= h -> S2.is_btrue (S2.bneg (SQLSem2.cond_sem d G0 c0 Hinv h0)) = true).
-    intros. rewrite H2. clear h0 H2. simpl. repeat rewrite eq_rect_r_eq_refl.
-    dependent inversion j0 with 
-      (fun G0 Q0 Hinv => forall h0, h0 ~= h -> S2.is_btrue
-        (S2.bneg (S2.of_bool (0 <? Rel.card (projT2
-           (SQLSem2.inner_q_sem d G0 Q0 Hinv h0))))) = true).
-    intros. rewrite H4. clear h0 H4. simpl.
-    admit.
-  Admitted.
-*)
 
 Fixpoint rmone A (eq_dec : forall x y : A, {x = y}+{x <> y}) a (l : list A) : list A :=
     match l with
@@ -774,335 +597,6 @@ Qed.
     unfold cast. reflexivity.
   Qed.
 
-(*
-  Lemma cond_sem_ex_selstar_aux d g q s s0 Hq tml Hs0 (Hlens: length s = length s0) Hff Hc h :
-    forall h0, h0 ~= h -> (* s0 = freshlist (length tml) -> *)
-    S2.is_btrue (SQLSem2.cond_sem d g 
-     (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc)
-              (TRUE) (combine tml s0))) Hff h0) =
-    (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s0 :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                          (TRUE) (combine tml s0)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s0 :: List.nil) (cast _ _ Hs0 Vl)) h))))).
-(*
-after changing inner_q_sem to bool
-
-  Proof.
-    dependent inversion Hff with (fun G0 c0 Hinv => forall h0, h0 ~= h -> (* s0 = freshlist (length tml) -> *)
-S2.is_btrue
-  (SQLSem2.cond_sem d G0 c0 Hinv h0) =
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h)
-      (fun Vl : Rel.T (length s) =>
-       S2.is_btrue
-         (SQLSem2.cond_sem d (s0 :: g)
-            (List.fold_right
-               (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-               (combine tml s0)) Hc
-            (Ev.env_app (s0 :: Datatypes.nil) g
-               (Ev.env_of_tuple (s0 :: Datatypes.nil)
-                  (cast (Rel.T (length s)) (Rel.T (list_sum (List.map (length (A:=Name)) (s0 :: Datatypes.nil))))
-                     Hs0 Vl)) h)))))).
-    intros h0 Hh0; simpl; repeat rewrite eq_rect_r_eq_refl.
-    unfold S2.is_btrue, S2.of_bool. generalize h0 Hh0; clear h0 Hh0.
-    dependent inversion j with (fun G0 q1 Hinv => forall h0, h0 ~= h ->
-(0 <?
- Rel.card
-   (projT2
-      (SQLSem2.inner_q_sem d G0 q1 Hinv h0))) =
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h)
-      (fun Vl : Rel.T (length s) =>
-       SQLSem2.cond_sem d (s0 :: g)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0)) Hc
-         (Ev.env_app (s0 :: Datatypes.nil) g
-            (Ev.env_app (s0 :: Datatypes.nil) Datatypes.nil
-               (existT (fun h1 : Ev.preenv => length (s0 ++ Datatypes.nil) = length h1)
-                  (to_list (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl))))
-                  (eq_ind_r (fun n : nat => length (s0 ++ Datatypes.nil) = n)
-                     (eq_ind_r (fun n : nat => n = length s0)
-                        (Decidable.dec_not_not (length s0 + 0 = length s0)
-                           (dec_eq_nat (length s0 + 0) (length s0))
-                           (fun H0 : length s0 + 0 <> length s0 =>
-                            eq_ind_r (fun x : Z => Zne x (Z.of_nat (length s0)) -> False)
-                              (fun H2 : Zne (Z.of_nat (length s0) + 0) (Z.of_nat (length s0)) =>
-                               ex_ind
-                                 (fun (Zvar0 : Z)
-                                    (Omega2 : Z.of_nat (length s0) = Zvar0 /\ (0 <= Zvar0 * 1 + 0)%Z) =>
-                                  and_ind
-                                    (fun (Omega0 : Z.of_nat (length s0) = Zvar0) (_ : (0 <= Zvar0 * 1 + 0)%Z) =>
-                                     eq_ind_r (fun x : Z => Zne (x + 0 + - Z.of_nat (length s0)) 0 -> False)
-                                       (eq_ind_r (fun x : Z => Zne (Zvar0 + 0 + - x) 0 -> False)
-                                          (fast_Zopp_eq_mult_neg_1 Zvar0
-                                             (fun x : Z => Zne (Zvar0 + 0 + x) 0 -> False)
-                                             (fast_Zplus_comm (Zvar0 + 0) (Zvar0 * -1)
-                                                (fun x : Z => Zne x 0 -> False)
-                                                (fast_Zplus_assoc (Zvar0 * -1) Zvar0 0
-                                                   (fun x : Z => Zne x 0 -> False)
-                                                   (fast_Zred_factor3 Zvar0 (-1)
-                                                      (fun x : Z => Zne (x + 0) 0 -> False)
-                                                      (fast_Zred_factor5 Zvar0 0 (fun x : Z => Zne x 0 -> False)
-                                                         (fun Omega3 : Zne 0 0 => Omega3 eq_refl)))))) Omega0)
-                                       Omega0 (Zne_left (Z.of_nat (length s0) + 0) (Z.of_nat (length s0)) H2))
-                                    Omega2) (intro_Z (length s0))) (Nat2Z.inj_add (length s0) 0)
-                              (inj_neq (length s0 + 0) (length s0) H0))) (app_length s0 Datatypes.nil))
-                     (length_to_list Rel.V (length s0)
-                        (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl))))))
-               (existT (fun h1 : Ev.preenv => 0 = length h1) Datatypes.nil
-                  eq_refl)) h))))).
-  intros h0 Hh0; simpl; rewrite card_sum.
-  generalize h0 Hh0 j1; clear h0 Hh0 j1.
-  dependent inversion j0 with 
-      (fun G0 btb0 G1 Hinv => forall h0, h0 ~= h -> 
-forall
-  j1 : j_cond d (G1 ++ G0)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0)),
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.btb_sem d G0 btb0 G1 Hinv h0)
-      (cast (Rel.T (list_sum (List.map (length (A:=Name)) G1)) -> bool) (Rel.T (length (concat G1)) -> bool)
-         (eq_rect (length (concat G1)) (fun x : nat => (Rel.T x -> bool) = (Rel.T (length (concat G1)) -> bool))
-            eq_refl (list_sum (List.map (length (A:=Name)) G1)) (length_concat_list_sum Name G1))
-         (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) G1)) =>
-          S2.is_btrue
-            (SQLSem2.cond_sem d (G1 ++ G0)
-               (List.fold_right
-                  (fun (ta : pretm * Name) (acc : precond) =>
-                   let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                  (TRUE) (combine tml s0)) j1 (Ev.env_app G1 G0 (Ev.env_of_tuple G1 Vl) h0)))))) =
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h)
-      (fun Vl : Rel.T (length s) =>
-       SQLSem2.cond_sem d (s0 :: g)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0)) Hc
-         (Ev.env_app (s0 :: Datatypes.nil) g
-            (Ev.env_app (s0 :: Datatypes.nil) Datatypes.nil
-               (existT (fun h1 : Ev.preenv => length s0 :: Datatypes.nil = List.map (length (A:=Value)) h1)
-                  (to_list (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl)))
-                   :: Datatypes.nil)
-                  (eq_ind_r (fun n : nat => length s0 :: Datatypes.nil = n :: Datatypes.nil) eq_refl
-                     (length_to_list Rel.V (length s0)
-                        (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl))))))
-               (existT (fun h1 : Ev.preenv => Datatypes.nil = List.map (length (A:=Value)) h1) Datatypes.nil
-                  eq_refl)) h))))).
-    intros h0 Hh0. simpl. repeat rewrite eq_rect_r_eq_refl.
-    generalize h0 Hh0 j2; clear h0 Hh0 j2. generalize e; clear e.
-    dependent inversion j1 with (fun G0 T0 s1' Hinv => forall (e : length s1' = length s0) h0, h0 ~= h ->
-  forall (j2 : j_btb d G0 Datatypes.nil g4)
-  (j3 : j_cond d (s0 :: g4 ++ G0)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0))),
-(0 <?
- Rel.card
-   (Rel.sel
-      (eq_rect_r (fun l : list Name => Rel.R (length l))
-         (eq_rect_r (fun n : nat => Rel.R n)
-            (eq_rect (length s1') (fun n0 : nat => Rel.R (n0 + length (concat g4)))
-              (Rel.times (SQLSem2.tb_sem d G0 false T0 s1' Hinv h0)
-               (SQLSem2.btb_sem d G0 Datatypes.nil g4 j2 h0)) (length s0) e) (app_length s0 (concat g4))) 
-         (concat_cons s0 g4))
-      (cast (Rel.T (length s0 + list_sum (List.map (length (A:=Name)) g4)) -> bool)
-         (Rel.T (length (s0 ++ concat g4)) -> bool)
-         (eq_rect (length (s0 ++ concat g4))
-            (fun x : nat => (Rel.T x -> bool) = (Rel.T (length (s0 ++ concat g4)) -> bool)) eq_refl
-            (length s0 + list_sum (List.map (length (A:=Name)) g4)) (length_concat_list_sum Name (s0 :: g4)))
-         (fun Vl : Rel.T (length s0 + list_sum (List.map (length (A:=Name)) g4)) =>
-          S2.is_btrue
-            (SQLSem2.cond_sem d (s0 :: g4 ++ G0)
-               (List.fold_right
-                  (fun (ta : pretm * Name) (acc : precond) =>
-                   let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                  (TRUE) (combine tml s0)) j3
-               (Ev.env_app (s0 :: g4) G0
-                  (Ev.env_app (s0 :: Datatypes.nil) g4
-                     (existT
-                        (fun h1 : Ev.preenv => length s0 :: Datatypes.nil = List.map (length (A:=Value)) h1)
-                        (to_list (fst (Ev.split Vl)) :: Datatypes.nil)
-                        (eq_ind_r (fun n : nat => length s0 :: Datatypes.nil = n :: Datatypes.nil) eq_refl
-                           (length_to_list Rel.V (length s0) (fst (Ev.split Vl)))))
-                     (Ev.env_of_tuple g4 (snd (Ev.split Vl)))) h0)))))) =
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h)
-      (fun Vl : Rel.T (length s) =>
-       SQLSem2.cond_sem d (s0 :: g)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0)) Hc
-         (Ev.env_app (s0 :: Datatypes.nil) g
-            (Ev.env_app (s0 :: Datatypes.nil) Datatypes.nil
-               (existT (fun h1 : Ev.preenv => length s0 :: Datatypes.nil = List.map (length (A:=Value)) h1)
-                  (to_list (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl)))
-                   :: Datatypes.nil)
-                  (eq_ind_r (fun n : nat => length s0 :: Datatypes.nil = n :: Datatypes.nil) eq_refl
-                     (length_to_list Rel.V (length s0)
-                        (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl))))))
-               (existT (fun h1 : Ev.preenv => Datatypes.nil = List.map (length (A:=Value)) h1) Datatypes.nil
-                  eq_refl)) h))))).
-  intros e h0 Hh0 j3 j4. simpl. repeat rewrite eq_rect_r_eq_refl. generalize j2 j4 h0 Hh0; clear j2 j4 h0 Hh0.
-  dependent inversion j3 with (fun G0 btb1 G1 Hinv => 
-    forall (j2 : j_query d G0 (ttquery d q) s1)
-      (j4 : j_cond d (s0 :: G1 ++ G0)
-          (List.fold_right
-             (fun (ta : pretm * Name) (acc : precond) =>
-              let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-             (combine tml s0))) h0, h0 ~= h ->
-(0 <?
- Rel.card
-   (Rel.sel
-      (eq_rect_r (fun l : list Name => Rel.R (length l))
-         (eq_rect_r (fun n0 : nat => Rel.R n0)
-            (eq_rect (length s1) (fun n0 : nat => Rel.R (n0 + length (concat G1)))
-               (Rel.times (SQLSem2.q_sem d G0 (ttquery d q) s1 j2 h0) (SQLSem2.btb_sem d G0 btb1 G1 Hinv h0))
-               (length s0) e) (app_length s0 (concat G1))) (concat_cons s0 G1))
-      (cast (Rel.T (length s0 + list_sum (List.map (length (A:=Name)) G1)) -> bool)
-         (Rel.T (length (s0 ++ concat G1)) -> bool)
-         (eq_rect (length (s0 ++ concat G1))
-            (fun x : nat => (Rel.T x -> bool) = (Rel.T (length (s0 ++ concat G1)) -> bool)) eq_refl
-            (length s0 + list_sum (List.map (length (A:=Name)) G1)) (length_concat_list_sum Name (s0 :: G1)))
-         (fun Vl : Rel.T (length s0 + list_sum (List.map (length (A:=Name)) G1)) =>
-          S2.is_btrue
-            (SQLSem2.cond_sem d (s0 :: G1 ++ G0)
-               (List.fold_right
-                  (fun (ta : pretm * Name) (acc : precond) =>
-                   let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                  (TRUE) (combine tml s0)) j4
-               (Ev.env_app (s0 :: G1) G0
-                  (Ev.env_app (s0 :: Datatypes.nil) G1
-                     (existT (fun h1 : Ev.preenv => length s0 :: Datatypes.nil = List.map (length (A:=Value)) h1)
-                        (to_list (fst (Ev.split Vl)) :: Datatypes.nil)
-                        (eq_ind_r (fun n0 : nat => length s0 :: Datatypes.nil = n0 :: Datatypes.nil) eq_refl
-                           (length_to_list Rel.V (length s0) (fst (Ev.split Vl)))))
-                     (Ev.env_of_tuple G1 (snd (Ev.split Vl)))) h0)))))) =
-(0 <?
- Rel.card
-   (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h)
-      (fun Vl : Rel.T (length s) =>
-       SQLSem2.cond_sem d (s0 :: g)
-         (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) =>
-             let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-            (combine tml s0)) Hc
-         (Ev.env_app (s0 :: Datatypes.nil) g
-            (Ev.env_app (s0 :: Datatypes.nil) Datatypes.nil
-               (existT (fun h1 : Ev.preenv => length s0 :: Datatypes.nil = List.map (length (A:=Value)) h1)
-                  (to_list (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl)))
-                   :: Datatypes.nil)
-                  (eq_ind_r (fun n0 : nat => length s0 :: Datatypes.nil = n0 :: Datatypes.nil) eq_refl
-                     (length_to_list Rel.V (length s0)
-                        (fst (Ev.split (cast (Rel.T (length s)) (Rel.T (length s0 + 0)) Hs0 Vl))))))
-               (existT (fun h1 : Ev.preenv => Datatypes.nil = List.map (length (A:=Value)) h1) Datatypes.nil eq_refl))
-            h))))).
-  intros j4 j5 h0 Hh0. rewrite Hh0. (* subst. *) simpl. repeat rewrite eq_rect_r_eq_refl.
-  generalize (app_length s0 Datatypes.nil). intro e'.
-  f_equal.
-  enough (Hs1 : s1 = s).
-  + apply eq_card_dep.
-    - rewrite Hlens. rewrite app_nil_r. reflexivity.
-    - apply eq_sel.
-      * rewrite Hlens. rewrite app_nil_r. reflexivity.
-      * generalize e j4 e'. clear e j4 e'. rewrite Hs1. intros. apply eq_memb_dep.
-        ++ rewrite Hlens. rewrite app_nil_r. reflexivity.
-        ++ apply (JMeq_eq_rect_r _ _ _ _ _ (fun l => Rel.R (length l)) _ _).
-           apply JMeq_eq_rect_r. apply p_ext_dep.
-           -- omega.
-           -- rewrite <- e. intros. rewrite eq_rect_eq_refl.
-              rewrite (Rel.p_times _ _ _ _ _ r3 (Vector.nil _)).
-              ** rewrite Rel.p_one. rewrite mult_1_r.
-                 f_equal. apply JMeq_eq. apply SQLSem2.q_sem_pi. reflexivity.
-              ** apply JMeq_eq. eapply (JMeq_trans H16). elim r3; intuition.
-        ++ exact H14.
-      * generalize j5; clear j5. rewrite Hs0. intro j5. intros. simpl.
-        enough (Rel.T (length (s0 ++ Datatypes.nil)) = Rel.T (length s0 + 0)).
-        ++ rewrite (eq_cast_fun _ _ _ H16). f_equal.
-           enough (cast (Rel.T (length (s0 ++ Datatypes.nil))) (Rel.T (length s0 + 0)) H16 r1 = r2).
-                  (* cast (Rel.T (length s)) (Rel.T (length s + 0)) Hs r2).  *)
-           -- rewrite H17. apply JMeq_eq. apply SQLSem2.cond_sem_pi. reflexivity.
-           -- generalize r1 r2 H14; clear r1 r2 H14. rewrite H16. simpl. intros.
-              rewrite H14. reflexivity.
-        ++ rewrite app_nil_r. rewrite plus_0_r. reflexivity.
-  + pose (jq_q_schema _ _ _ _ Hq).
-    pose (jq_q_schema _ _ _ _ j4).
-    rewrite e0 in e1. injection e1. intuition.
-  Qed.
-*)
-    admit.
-  Admitted.
-
-(*
-  Lemma cond_sem_ex_selstar_aux d g q s s0 Hq tml Hs0 (Hlens: length s = length s0) Hff Hc h :
-    forall h0, h0 ~= h -> (* s0 = freshlist (length tml) -> *)
-    S2.is_btrue (SQLSem2.cond_sem d g 
-     (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in ((t IS NULL) OR cndeq t (tmvar (0, a))) AND acc) 
-              (TRUE) (combine tml s0))) Hff h0) =
-    (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s0 :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in ((t IS NULL) OR cndeq t (tmvar (0, a))) AND acc) 
-                          (TRUE) (combine tml s0)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s0 :: List.nil) (cast _ _ Hs0 Vl)) h))))).
-*)
-  Lemma cond_sem_ex_selstar d g q s s0 Hq tml Hs0 (Hlens : length s = length s0) Hff Hc h :
-    S2.is_btrue (SQLSem2.cond_sem d g 
-     (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-              (TRUE) (combine tml s0))) Hff h) =
-    (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s0 :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                          (TRUE) (combine tml s0)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s0 :: List.nil) (cast _ _ Hs0 Vl)) h))))).
-  Proof.
-    apply cond_sem_ex_selstar_aux; auto.
-  Qed.
-
-  Lemma cond_sem_not_ex_selstar d g q s s0 Hq tml Hs0 (Hlens : length s = length s0) Hff Hc h :
-    S2.is_btrue (SQLSem2.cond_sem d g 
-     (NOT (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-              (TRUE) (combine tml s0)))) Hff h) =
-    negb (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s0 :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                          (TRUE) (combine tml s0)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s0 :: List.nil) (cast _ _ Hs0 Vl)) h))))).
-  Proof.
-    cut (forall (h0 : Ev.env g), h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d g 
-     (NOT (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
-      WHERE List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-                let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-              (TRUE) (combine tml s0)))) Hff h0) =
-    negb (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl => S2.is_btrue (SQLSem2.cond_sem d (s0 :: g)%list
-                       (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) 
-                          (TRUE) (combine tml s0)) Hc (Ev.env_app _ _ (Ev.env_of_tuple (s0 :: List.nil) (cast _ _ Hs0 Vl)) h)))))).
-    intro Hcut. apply (Hcut h). reflexivity.
-    dependent inversion Hff with (fun G0 c0 Hinv => forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d G0 c0 Hinv h0) = 
-      negb (0 <? Rel.card (Rel.sel (SQLSem2.q_sem d g (ttquery d q) s Hq h) (fun Vl =>
-         S2.is_btrue (SQLSem2.cond_sem d (s0 :: g) (List.fold_right (fun (ta : pretm * Name) (acc : precond) =>
-           let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) (combine tml s0)) Hc
-              (Ev.env_app (s0 :: Datatypes.nil) g (Ev.env_of_tuple (s0 :: Datatypes.nil)
-                (cast _ _ Hs0 Vl)) h)))))).
-    intros. rewrite H0. clear h0 H0. simpl. repeat rewrite eq_rect_r_eq_refl.
-    cut (forall b1 b2, S2.is_btrue b1 = b2 -> S2.is_btrue (S2.bneg b1) = negb b2).
-    + intro Hcut. apply Hcut. rewrite -> (cond_sem_ex_selstar _ _ _ _ _ Hq _ Hs0 Hlens j Hc _). reflexivity.
-    + unfold S2.is_btrue, S2.bneg. intros. rewrite H0. reflexivity.
-  Qed.
-*)
-
 Lemma pred_impl_fs_sel n S p q :
   (forall (t : Rel.T n), p t = true -> q t = true) ->
   forall x, Rel.memb (Rel.sel S p) x <= Rel.memb (Rel.sel S q) x.
@@ -1332,19 +826,6 @@ Proof.
   intro. rewrite H. reflexivity.
 Qed.
 
-(*
-Lemma v_tml_sem_cons g t tml H Ht Html h :
-  Ev.v_tml_sem g (t :: tml) H h = cons _ (Ev.tm_sem g t Ht h) _ (Ev.v_tml_sem g tml Html h).
-Proof.
-  unfold Ev.v_tml_sem at 1. apply JMeq_eq. rewrite <- (Ev.p_tml_sem g (t::tml) H h).
-  rewrite eq_rect_eq_refl. simpl. apply Vector_cons_equal.
-  + rewrite Ev.p_tml_sem. reflexivity.
-  + apply Ev.tm_sem_pi. reflexivity.
-  + unfold Ev.v_tml_sem. rewrite <- Ev.p_tml_sem. rewrite eq_rect_eq_refl.
-    apply of_list_equal. apply JMeq_eq. apply Ev.tml_sem_pi. reflexivity.
-Qed.
-*)
-
   Lemma S2_is_btrue_or_elim (b1 b2 : bool) (P : Prop) :
     (S2.is_btrue b1 = true -> P) -> (S2.is_btrue b2 = true -> P) ->
     S2.is_btrue (b1 || b2) = true -> P.
@@ -1375,127 +856,6 @@ Qed.
     reflexivity.
   Qed.
 
-(*
-
-Lemma cond_sem_cndeq_false1 d G t1 t2 Ht1 Hc h :
-  Ev.tm_sem G t1 Ht1 h = None ->
-  SQLSem2.cond_sem d G (cndeq t1 t2) Hc h = false.
-Proof.
-  intro Hsem1. cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d _ _ Hc h0 = false).
-  + intro Hcut; apply Hcut; reflexivity.
-  + dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> SQLSem2.cond_sem d G0 c0 Hinv h0 = false).
-    generalize p0 H2; clear p0 H2; rewrite <- e. intros p0 H2.
-    simpl in p0. pose (existT_projT2_eq _ _ _ H2). clearbody e0.
-    simpl. intros h0 Hh0; rewrite Hh0; clear h0 Hh0. repeat rewrite eq_rect_r_eq_refl.
-    transitivity (S2.sem_bpred 2 p0 ((fun HWF => 
-      Ev.tm_sem G t1 (HWF t1 (or_introl eq_refl)) h
-      ::(fun HWF0 => Ev.tm_sem G t2 (HWF0 t2 (or_introl eq_refl)) h
-      :: Datatypes.nil) (fun t H0 => HWF t (or_intror H0))) j0) (Ev.p_tml_sem G (t1::t2::Datatypes.nil) j0 h)).
-    reflexivity. rewrite e0. clear H2.
-    apply S2.sem_bpred_elim.
-    - intro. replace (Ev.tm_sem G t1 (j0 t1 (or_introl eq_refl)) h) with (Ev.tm_sem G t1 Ht1 h).
-      * rewrite Hsem1. simpl. 
-        destruct (bind (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h)
-          (fun b : BaseConst => ret (b :: Datatypes.nil))); simpl; intro Hfalse; discriminate Hfalse.
-      * apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-    - auto.
-Qed.
-
-Lemma cond_sem_cndeq_false2 d G t1 t2 Ht2 Hc h :
-  Ev.tm_sem G t2 Ht2 h = None ->
-  SQLSem2.cond_sem d G (cndeq t1 t2) Hc h = false.
-Proof.
-  intro Hsem1. cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d _ _ Hc h0 = false).
-  + intro Hcut; apply Hcut; reflexivity.
-  + dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> SQLSem2.cond_sem d G0 c0 Hinv h0 = false).
-    generalize p0 H2; clear p0 H2; rewrite <- e. intros p0 H2.
-    simpl in p0. pose (existT_projT2_eq _ _ _ H2). clearbody e0.
-    simpl. intros h0 Hh0; rewrite Hh0; clear h0 Hh0. repeat rewrite eq_rect_r_eq_refl.
-    transitivity (S2.sem_bpred 2 p0 ((fun HWF => 
-      Ev.tm_sem G t1 (HWF t1 (or_introl eq_refl)) h
-      ::(fun HWF0 => Ev.tm_sem G t2 (HWF0 t2 (or_introl eq_refl)) h
-      :: Datatypes.nil) (fun t H0 => HWF t (or_intror H0))) j0) (Ev.p_tml_sem G (t1::t2::Datatypes.nil) j0 h)).
-    reflexivity. rewrite e0. clear H2.
-    apply S2.sem_bpred_elim.
-    - intro. destruct (Ev.tm_sem G t1 (j0 t1 (or_introl eq_refl)) h); simpl.
-      * replace (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h) with (Ev.tm_sem G t2 Ht2 h).
-        ++ rewrite Hsem1. simpl. intro Hfalse. discriminate Hfalse.
-        ++ apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-      * replace (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h) with (Ev.tm_sem G t2 Ht2 h).
-        ++ rewrite Hsem1. simpl. intro Hfalse. discriminate Hfalse.
-        ++ apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-    - auto.
-Qed.
-
-
-Lemma cond_sem_cndeq_true1 d G t1 t2 Ht1 Ht2 Hc h k :
-  Ev.tm_sem G t1 Ht1 h = Some k -> Ev.tm_sem G t2 Ht2 h = Some k ->
-  SQLSem2.cond_sem d G (cndeq t1 t2) Hc h = true.
-Proof.
-  intros Hsem1 Hsem2. cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d _ _ Hc h0 = true).
-  + intro Hcut; apply Hcut; reflexivity.
-  + dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-      SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-    generalize p0 H2; clear p0 H2; rewrite <- e. intros p0 H2.
-    simpl in p0. pose (existT_projT2_eq _ _ _ H2). clearbody e0.
-    simpl. intros h0 Hh0; rewrite Hh0; clear h0 Hh0. repeat rewrite eq_rect_r_eq_refl.
-    cut (S2.sem_bpred 2 p0 ((fun HWF => 
-      Ev.tm_sem G t1 (HWF t1 (or_introl eq_refl)) h
-      ::(fun HWF0 => Ev.tm_sem G t2 (HWF0 t2 (or_introl eq_refl)) h
-      :: Datatypes.nil) (fun t H0 => 
-      HWF t (or_intror H0))) j0) (Ev.p_tml_sem G (t1::t2::Datatypes.nil) j0 h) = true). intro Hcut. apply Hcut.
-    apply S2.sem_bpred_elim.
-    - intro. replace (Ev.tm_sem G t1 (j0 t1 (or_introl eq_refl)) h) with (Ev.tm_sem G t1 Ht1 h).
-      * replace (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h) with (Ev.tm_sem G t2 Ht2 h).
-        ++ rewrite Hsem1, Hsem2. simpl.
-           unfold ret. intro Hinj. injection Hinj. intro Hcl.
-           rewrite <- Hcl. simpl. intro Htriv. rewrite e0.
-           rewrite (UIP _ _ Htriv). simpl. repeat rewrite eq_rect_r_eq_refl. 
-           unfold S2.of_bool, nth_lt. simpl. apply Db.BaseConst_eqb_eq. reflexivity.
-        ++ apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-      * apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-    - replace (Ev.tm_sem G t1 (j0 t1 (or_introl eq_refl)) h) with (Ev.tm_sem G t1 Ht1 h).
-      * replace (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h) with (Ev.tm_sem G t2 Ht2 h).
-        ++ rewrite Hsem1, Hsem2. simpl. unfold ret. intro Hfalse. discriminate Hfalse.
-        ++ apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-      * apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-Qed.
-
-Lemma cond_sem_cndeq_true2 d G t1 t2 Ht1 Ht2 Hc h :
-  SQLSem2.cond_sem d G (cndeq t1 t2) Hc h = true -> 
-  exists k, Ev.tm_sem G t1 Ht1 h = Some k /\ Ev.tm_sem G t2 Ht2 h = Some k.
-Proof.
-  cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d _ _ Hc h0 = true -> 
-    exists k, Ev.tm_sem G t1 Ht1 h = Some k /\ Ev.tm_sem G t2 Ht2 h = Some k).
-  + intro Hcut; apply Hcut; reflexivity.
-  + dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-      SQLSem2.cond_sem d G0 c0 Hinv h0 = true -> 
-      exists k : BaseConst, Ev.tm_sem G t1 Ht1 h = Some k /\ Ev.tm_sem G t2 Ht2 h = Some k).
-    generalize p0 H2; clear p0 H2; rewrite <- e. intros p0 H2.
-    simpl in p0. pose (existT_projT2_eq _ _ _ H2). clearbody e0.
-    simpl. intros h0 Hh0; rewrite Hh0; clear h0 Hh0. repeat rewrite eq_rect_r_eq_refl.
-    cut (S2.sem_bpred 2 p0 ((fun HWF => 
-      Ev.tm_sem G t1 (HWF t1 (or_introl eq_refl)) h
-      ::(fun HWF0 => Ev.tm_sem G t2 (HWF0 t2 (or_introl eq_refl)) h
-      :: Datatypes.nil) (fun t H0 => HWF t (or_intror H0))) j0) (Ev.p_tml_sem G (t1::t2::Datatypes.nil) j0 h) = true
-      -> exists k : BaseConst, Ev.tm_sem G t1 Ht1 h = Some k /\ Ev.tm_sem G t2 Ht2 h = Some k). intro Hcut. apply Hcut.
-    apply S2.sem_bpred_elim.
-    - intro. destruct (Ev.tm_sem G t2 (j0 t2 (or_intror (or_introl eq_refl))) h) eqn:Hk2; simpl.
-      * destruct (Ev.tm_sem G t1 (j0 t1 (or_introl eq_refl)) h) eqn:Hk1; simpl.
-        ++ unfold ret. intro Hinj; injection Hinj; clear Hinj. intro Hcl. rewrite <- Hcl.
-          simpl. intro Htriv. rewrite e0.
-          rewrite (UIP _ _ Htriv). simpl. repeat rewrite eq_rect_r_eq_refl. 
-          unfold S2.of_bool, nth_lt. simpl. intro Heq. cut (b0 = b).
-          -- intro Hcut. exists b. split.
-            ** rewrite <- Hcut. rewrite <- Hk1. apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-            ** rewrite <- Hk2. apply JMeq_eq. apply Ev.tm_sem_pi. reflexivity.
-          -- apply Db.BaseConst_eqb_eq. exact Heq.
-        ++ intro Hfalse; discriminate Hfalse.
-      * intro Hfalse; discriminate Hfalse.
-    - intros _ Hfalse. discriminate Hfalse.
-Qed.
-*)
-
 Lemma list_In_vec_In {A} (a : A) (l : list A) : List.In a l -> Vector.In a (Vector.of_list l).
 Proof.
   elim l.
@@ -1505,18 +865,6 @@ Proof.
     - constructor. apply IH. exact H.
 Qed.
 
-(*
-Definition j_var_findpos a s :
-  j_var a s -> 
-  forall m, { n : nat & n < m + length s /\ findpos s (fun x => if Db.Name_dec x a then true else false) m = Some n }.
-intro H. elim H; simpl.
-  + intros. exists m. destruct (Db.Name_dec a a); intuition.
-  + intros. destruct (Db.Name_dec b a); intuition.
-    - rewrite e in n. contradiction n. reflexivity.
-    - destruct (H0 (S m)). destruct a0.
-      exists x. split; auto; omega.
-Defined.
-*)
 Lemma aux_j_var_findpos' a s :
   j_var a s -> 
   forall m, exists n, n < m + length s /\ findpos s (fun x => if Db.Name_dec x a then true else false) m = Some n.
@@ -1540,32 +888,6 @@ Definition Fin_findpos a s (Ha : j_var a s) : Fin.t (length s).
   destruct (aux_j_var_findpos' _ _ Ha 0). destruct H.
   generalize (j_var_findpos' a s Ha). rewrite H0. intros. simpl. exact H.
 Defined.
-
-(*
-Definition is_subenv {n} (ul : Rel.T n) {m} {s} {g} (Hlen : length s = m + n) (h : Ev.env (s::g)) := 
-  forall a (Ha: j_var a s) k (Hk : k < n), proj1_sig (Fin.to_nat (Fin_findpos a s Ha)) = k + m ->
-  Ev.var_sem 0 _ (s::g) _ eq_refl Ha h = nth ul (Fin.of_nat_lt Hk).
-
-Lemma cons_is_subenv t {n} (ul : Rel.T n) {s} {g} (h : Ev.env (s::g)) :
-  forall m m' (H1 : length s = m + S n) (H2 : length s = m' + n), 
-  is_subenv (cons _ t _ ul) H1 h -> is_subenv ul H2 h.
-Proof.
-  intros. unfold is_subenv. intros. cut (S k < S n).
-  + intro HSk. replace (nth ul (Fin.of_nat_lt Hk)) with (nth (cons _ t _ ul) (Fin.of_nat_lt HSk)).
-    - apply H. rewrite H0. omega.
-    - simpl. f_equal. apply Fin.of_nat_ext.
-  + omega.
-Qed.
-
-Lemma eq_is_subenv {m} (ul : Rel.T m) {n} (vl : Rel.T n) {s} {g} (h : Ev.env (s::g)) : 
-  m = n ->
-  forall k (Hul : length s = k + m) (Hvl : length s = k + n), ul ~= vl -> is_subenv ul Hul h -> is_subenv vl Hvl h.
-Proof.
-  intro. generalize ul; clear ul; rewrite H; intro ul.
-  intros k Hul Hvl e. generalize Hul; clear Hul; rewrite e; intro Hul. intro Hsub.
-  unfold is_subenv. intros. apply Hsub. exact H0.
-Qed.
-*)
 
 Lemma findpos_m_Some_step A (s : list A) p :
     forall m n, findpos s p m = Some n -> findpos s p (S m) = Some (S n).
@@ -1655,248 +977,6 @@ Proof.
       Unshelve. reflexivity.
 Qed.
 
-(*
-Lemma cond_sem_not_neq_iff d g s tml (Hlen : length s = length tml) : 
-  forall Html Hc (ul : Rel.T (length tml)), 
-  forall h h' h'', h = Ev.env_app (s::List.nil) _ h'' h' -> is_subenv ul (Hlen : length s = 0 + length tml) h ->
-  SQLSem2.cond_sem d (s :: g)%list 
-    (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) (combine tml s)) 
-    Hc h = true
-  <-> forall i, S3.is_bfalse (S3.veq (nth ul i) (nth (Ev.v_tml_sem g tml Html h') i)) = false.
-Proof.
-  eapply (@list_rect2 _ _ (fun s0 tml0 =>
-    forall s1, s = s1 ++ s0 ->
-    forall (Hlen0: length s = length s1 + length tml0),
-    forall Html Hc (ul: Rel.T (length tml0)) h h' h'', 
-    h = Ev.env_app (s::List.nil) _ h'' h' -> 
-    is_subenv ul Hlen0 h ->
-    SQLSem2.cond_sem d (s :: g)
-      (List.fold_right (fun (ta : pretm * Name) acc =>
-        let (t,a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) (combine tml0 s0)) Hc h = true
-    <-> (forall i, S3.is_bfalse (S3.veq (nth ul i) (nth (Ev.v_tml_sem g tml0 Html h') i)) = false))
-    _ _ _ _  Hlen List.nil eq_refl Hlen). Unshelve.
-  + simpl. intros. split; intro.
-    - intro. inversion i.
-    - generalize h. 
-      dependent inversion Hc with (fun G0 c0 Hinv =>
-          forall (h0 : Ev.env G0), SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-      intros. reflexivity.
-  + simpl. intros x t s0 tml0 Hlen0 IH s1 Hs Hlens Html0 Hc ul h h' h'' Happ Hsub. split; intro.
-    - intro i. cut (forall Ht, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = Db.null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-      * generalize Hsub; clear Hsub.
-        cut (forall i0 (ul1 : Rel.T (S (length tml0))), i0 ~= i -> ul1 ~= ul -> 
-          is_subenv ul1 Hlens h ->
-          (forall Ht : j_tm g t, nth ul1 Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul1 Fin.F1) ->
-          S3.is_bfalse (S3.veq (nth ul i0) (nth (Ev.v_tml_sem g (t :: tml0) Html0 h') i)) = false). intro Hcut. apply Hcut. reflexivity. reflexivity.
-        dependent inversion ul with (fun m (ul0 : Rel.T m) => forall i0 (ul1 : Rel.T (S (length tml0))),
-          i0 ~= i -> ul1 ~= ul0 -> is_subenv ul1 Hlens h ->
-          (forall Ht : j_tm g t, nth ul1 Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul1 Fin.F1) ->
-          S3.is_bfalse (S3.veq (nth ul0 i0) (nth (Ev.v_tml_sem g (t :: tml0) Html0 h') i)) = false).
-        intros i0 ul1 Hi0 Hul1; rewrite Hi0, Hul1; clear Hi0. intro Hsub. cut ((j_tm g t * j_tml g tml0)%type).
-        ++ intro. destruct X. rewrite (v_tml_sem_cons _ _ _ _ j j0 h'). intro Hcut. simpl in Hcut.
-          cut (forall (ul0 vl0 : Rel.T (S (length tml0))), 
-            ul0 ~= cons _ h0 _ t0 ->
-            vl0 ~= cons _ (Ev.tm_sem g t j h') _ (Ev.v_tml_sem g tml0 j0 h') ->
-            S3.is_bfalse (S3.veq (nth ul0 i) (nth vl0 i)) = false).
-          -- intro Hcut1. apply Hcut1; reflexivity.
-          -- dependent inversion i with (fun (n1 : nat) (i0 : Fin.t n1) => 
-              forall ul0 vl0, ul0 ~= cons _ h0 (length tml0) t0 -> 
-              vl0 ~= cons _ (Ev.tm_sem g t j h') _ (Ev.v_tml_sem g tml0 j0 h') ->
-              S3.is_bfalse (S3.veq (nth ul0 i0) (nth vl0 i0)) = false);
-              intros ul0 vl0 Hul0 Hvl0; rewrite Hul0, Hvl0; clear Hul0 Hvl0.
-            ** simpl. destruct (Hcut j).
-              +++ rewrite H0; simpl; reflexivity.
-              +++ destruct H0.
-                --- rewrite H0. unfold S3.veq. destruct h0; simpl; reflexivity.
-                --- rewrite H0. destruct h0; simpl; try reflexivity.
-                    replace (c_eq b b) with true; auto.
-                    symmetry. apply Db.BaseConst_eqb_eq. reflexivity.
-            ** simpl. generalize H. 
-              cut (forall h0, h0 ~= h ->
-                SQLSem2.cond_sem d (s :: g) (((tmvar (0, x) IS NULL) OR ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))))
-                   AND List.fold_right (fun (ta : pretm * Name) (acc : precond) => let (t2, a) := ta in
-                   ((tmvar (0, a) IS NULL) OR ((tm_lift t2 1 IS NULL) OR cndeq (tm_lift t2 1) (tmvar (0, a)))) AND acc)
-                (TRUE) (combine tml0 s0)) Hc h0 = true -> S3.is_bfalse (S3.veq (nth t0 t1) (nth (Ev.v_tml_sem g tml0 j0 h') t1)) = false).
-                intro Hcut1. apply Hcut1. reflexivity.
-              dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h ->
-                SQLSem2.cond_sem d G0 c0 Hinv h0 = true -> S3.is_bfalse (S3.veq (nth t0 t1) (nth (Ev.v_tml_sem g tml0 j0 h') t1)) = false).
-              intros h1 Hh1; rewrite Hh1; clear h1 Hh1. intro Hc'. simpl in Hc'. repeat rewrite eq_rect_r_eq_refl in Hc'.
-              eapply (S2_is_btrue_and_elim _ _ _ _ Hc'). Unshelve. intros Hc1 Hc2.
-              cut (length s = length (s1 ++ x :: Datatypes.nil) + length tml0).
-              +++ intro Hcut1. eapply (IH _ _ Hcut1 _ j2 _ h h' h'' Happ). Unshelve.
-                --- generalize Hsub. apply cons_is_subenv.
-                --- apply Hc2.
-                --- rewrite Hs. rewrite <- app_assoc. reflexivity.
-              +++ rewrite Hs. do 2 rewrite app_length. simpl. rewrite Hlen0. omega.
-        ++ split.
-          -- apply Html0; left; reflexivity.
-          -- intro t1. intro Ht1. apply Html0; right; apply Ht1.
-      * generalize H. cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d (s :: g)
-          (((tmvar (0, x) IS NULL) OR ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))))
-            AND List.fold_right (fun (ta : pretm * Name) (acc : precond) => let (t0, a) := ta in
-            ((tmvar (0, a) IS NULL) OR ((tm_lift t0 1 IS NULL) OR cndeq (tm_lift t0 1) (tmvar (0, a)))) AND acc)
-           (TRUE) (combine tml0 s0)) Hc h0 = true ->
-          forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-          intro Hcut1; apply Hcut1; reflexivity.
-        dependent inversion Hc with (fun G0 c0 Hinv => forall h0, h0 ~= h ->
-        SQLSem2.cond_sem d G0 c0 Hinv h0 = true -> forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-        intros h1 Hh1; rewrite Hh1; clear h1 Hh1. intro Hc'. simpl in Hc'. repeat rewrite eq_rect_r_eq_refl in Hc'.
-        eapply (S2_is_btrue_and_elim _ _ _ _ Hc'). Unshelve. intros Hc1 _.
-        generalize Hc1; clear Hc1.
-        cut (forall h0, h0 ~= h -> S2.is_btrue
-              (SQLSem2.cond_sem d (s :: g) ((tmvar (0, x) IS NULL) OR 
-                ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x)))) j h0) = true ->
-              forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-          intro Hcut1; apply Hcut1; reflexivity.
-        dependent inversion j with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-          SQLSem2.cond_sem d G0 c0 Hinv h0 = true -> forall Ht, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-        intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl. repeat rewrite eq_rect_r_eq_refl.
-        intro Hc1. eapply (S2_is_btrue_or_elim _ _ _ _ _ Hc1). Unshelve.
-        ++ clear Hc1.
-          cut (forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d (s :: g) (tmvar (0, x) IS NULL) j1 h0) = true ->
-            forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-            intro Hcut1; apply Hcut1; reflexivity.
-          dependent inversion j1 with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-            SQLSem2.cond_sem d G0 c0 Hinv h0 = true ->
-            forall Ht, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-          intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl; repeat rewrite eq_rect_r_eq_refl.
-          destruct (Ev.tm_sem (s::g) (tmvar (0,x)) j4 h) eqn:Hsem; unfold S2.of_bool; simpl; intuition.
-        ++ cut (forall h0, h0 ~= h -> 
-             S2.is_btrue (SQLSem2.cond_sem d (s :: g) ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))) j2 h0) 
-                = true ->
-             forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-            intro Hcut1; apply Hcut1; reflexivity.
-          dependent inversion j2 with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-            SQLSem2.cond_sem d G0 c0 Hinv h0 = true -> forall Ht, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-          intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl. repeat rewrite eq_rect_r_eq_refl.
-          intro Hc2. eapply (S2_is_btrue_or_elim _ _ _ _ _ Hc2). Unshelve.
-          -- clear Hc2.
-            cut (forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d (s :: g) (tm_lift t 1 IS NULL) j3 h0) = true ->
-              forall Ht : j_tm g t, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-              intro Hcut1; apply Hcut1; reflexivity.
-            dependent inversion j3 with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-               SQLSem2.cond_sem d G0 c0 Hinv h0 = true ->
-               forall Ht, nth ul Fin.F1 = null \/ Ev.tm_sem g t Ht h' = null \/ Ev.tm_sem g t Ht h' = nth ul Fin.F1).
-            intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl; repeat rewrite eq_rect_r_eq_refl.
-            destruct (Ev.tm_sem (s::g) (tm_lift t 1) j6 h) eqn:Hsem; unfold S2.of_bool; simpl; intuition.
-          -- intro Heq. cut ((j_tm (s::g) (tm_lift t 1) * j_tm (s::g) (tmvar (0,x)))%type).
-            ** intro p. destruct p. destruct (cond_sem_cndeq_true2 _ _ _ _ j5 j6 _ _ Heq).
-              destruct H7. intro Ht. right. right. cut (j_var x s).
-              +++ intro Hx. cut (proj1_sig (Fin.to_nat (Fin_findpos x s Hx)) = 0 + length s1).
-                --- intro Hcut1. refine (let Hsub' := Hsub _ Hx 0 (lt_O_Sn _) Hcut1 in _).
-                  clearbody Hsub'. transitivity (Ev.var_sem 0 x (s::g) s eq_refl Hx h).
-                  *** transitivity (Some x0).
-                    ++++ rewrite <- H7. rewrite Happ. apply (Ev.tm_sem_weak _ _ _ _ (s::List.nil)).
-                    ++++ rewrite <- H10. dependent inversion j6 with (fun t0 Hinv =>
-                          Ev.tm_sem (s::g) t0 Hinv h = Ev.var_sem 0 x (s::g) s eq_refl Hx h).
-                        simpl. simpl in e. injection e. intro e'.
-                        generalize e j7; clear e j7.
-                        eapply (@eq_rect _ _ (fun s0 => forall (e : Some s = Some s0) (j7 : j_var x s0), 
-                          Ev.var_sem 0 x (s :: g) s0 e j7 h = Ev.var_sem 0 x (s::g) s eq_refl Hx h) _ _ e').
-                        Unshelve. simpl. intros. apply JMeq_eq. apply Ev.var_sem_pi. reflexivity.
-                  *** rewrite Hsub'. reflexivity.
-                --- generalize Hx. rewrite Hs. intro Hx0. eapply Fin_findpos_tech. reflexivity.
-              +++ inversion j6. simpl in H12. injection H12. intro. rewrite H14. exact X.
-            ** inversion j4. split; apply X.
-              +++ left. reflexivity.
-              +++ right. left. reflexivity.
-    - cut (forall h1, h1 ~= h -> SQLSem2.cond_sem d (s :: g)
-        (((tmvar (0, x) IS NULL) OR ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))))
-         AND List.fold_right (fun (ta : pretm * Name) (acc : precond) => let (t0, a) := ta in
-          ((tmvar (0, a) IS NULL) OR ((tm_lift t0 1 IS NULL) OR cndeq (tm_lift t0 1) (tmvar (0, a)))) AND acc)
-         (TRUE) (combine tml0 s0)) Hc h1 = true). intro Hcut1; apply Hcut1; reflexivity.
-      dependent inversion Hc with (fun G0 c0 Hinv => forall h1, h1 ~= h -> SQLSem2.cond_sem d G0 c0 Hinv h1 = true).
-      intros h1 Hh1; rewrite Hh1; clear h1 Hh1. simpl. repeat rewrite eq_rect_r_eq_refl.
-      apply S2_is_btrue_and_intro.
-      * cut (forall h0, h0 ~= h -> S2.is_btrue (SQLSem2.cond_sem d (s :: g)
-           ((tmvar (0, x) IS NULL) OR ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x)))) j h0) = true).
-          intro Hcut1; apply Hcut1; reflexivity.
-        dependent inversion j with (fun G0 c0 Hinv => forall h0, h0 ~= h -> 
-          SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-        intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl. repeat rewrite eq_rect_r_eq_refl.
-        destruct (SQLSem2.cond_sem d (s :: g) ((tmvar (0,x)) IS NULL) j1 h) eqn:Hnull; auto.
-        generalize Hnull. clear Hnull.
-        cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d (s :: g) (tmvar (0, x) IS NULL) j1 h0 = false ->
-          S2.bor false (SQLSem2.cond_sem d (s :: g) 
-            ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))) j2 h) = true).
-          intro Hcut1; apply Hcut1; reflexivity.
-        dependent inversion j1 with (fun G0 c0 Hinv => forall h0, h0 ~= h ->
-          SQLSem2.cond_sem d G0 c0 Hinv h0 = false -> SQLSem2.cond_sem d (s::g) ((tm_lift t 1 IS NULL) OR (cndeq (tm_lift t 1) (tmvar (0,x)))) j2 h = true).
-        intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl. repeat rewrite eq_rect_r_eq_refl.
-        destruct (Ev.tm_sem (s :: g) (tmvar (0, x)) j4 h) eqn:Hnull.
-        ++ intros _. cut (forall h0, h0 ~= h -> SQLSem2.cond_sem d (s :: g) ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, x))) j2 h0 = true).
-            intro Hcut1; apply Hcut1; reflexivity.
-          dependent inversion j2 with (fun G0 c0 Hinv => forall h0, h0 ~= h ->
-            SQLSem2.cond_sem d G0 c0 Hinv h0 = true).
-          intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl; repeat rewrite eq_rect_r_eq_refl.
-          cut (forall h0, h0 ~= h -> S2.bor (SQLSem2.cond_sem d (s :: g) (tm_lift t 1 IS NULL) j5 h0)
-            (SQLSem2.cond_sem d (s :: g) (cndeq (tm_lift t 1) (tmvar (0, x))) j6 h) = true).
-            intro Hcut1; apply Hcut1; reflexivity.
-          dependent inversion j5 with (fun G0 c0 Hinv => forall h0, h0 ~= h ->
-            S2.bor (SQLSem2.cond_sem d G0 c0 Hinv h0) (SQLSem2.cond_sem d (s::g) (cndeq (tm_lift t 1) (tmvar (0,x))) j6 h) = true).
-          intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl; repeat rewrite eq_rect_r_eq_refl.
-          cut (Ev.tm_sem (s::g) (tm_lift t 1) j8 h = null \/ Ev.tm_sem (s::g) (tm_lift t 1) j8 h = Ev.tm_sem (s::g) (tmvar (0,x)) j4 h).
-          -- intro Hcut; destruct Hcut.
-            ** rewrite H13; simpl. reflexivity.
-            ** rewrite H13, Hnull. simpl. eapply cond_sem_cndeq_true1.
-              +++ rewrite Hnull in H13. exact H13.
-              +++ exact Hnull.
-          -- assert (Ht : j_tm g t). apply Html0. left. reflexivity.
-            replace (Ev.tm_sem (s::g) (tm_lift t 1) j8 h) with (Ev.tm_sem g t Ht h').
-            ** assert (Hsuba : j_var x s).
-              inversion j4. simpl in H16. injection H16. intuition.
-              assert (Hsubk : 0 < S (length tml0)). omega.
-              assert (Hfind : proj1_sig (Fin.to_nat (Fin_findpos x s Hsuba)) = 0 + length s1).
-                rewrite (Fin_findpos_tech _ _ _ _ _ Hs). reflexivity.
-              pose (Hsub' := Hsub _ Hsuba _ Hsubk Hfind). clearbody Hsub'.
-              pose (H' := H Fin.F1). clearbody H'.
-              replace (nth ul Fin.F1) with (nth ul (Fin.of_nat_lt Hsubk)) in H'.
-              assert (Hx : Ev.tm_sem (s :: g) (tmvar (0, x)) j4 h = Ev.var_sem 0 x (s::g) s eq_refl Hsuba h).
-              cut (forall h0, h0 ~= h -> Ev.tm_sem (s :: g) (tmvar (0, x)) j4 h0 = 
-                Ev.var_sem 0 x (s :: g) s eq_refl Hsuba h). intro Hcut1; apply Hcut1; reflexivity.
-              dependent inversion j4 with (fun t0 Hinv => forall h0, h0 ~= h ->
-                  Ev.tm_sem (s::g) t0 Hinv h0 = Ev.var_sem 0 x (s::g) s eq_refl Hsuba h). simpl.
-              intros h0 Hh0; rewrite Hh0; clear h0 Hh0. simpl in e. injection e. intro e'.
-              generalize e j9 ; clear e j9 ; rewrite <- e'. intros.
-              apply JMeq_eq. apply Ev.var_sem_pi. reflexivity.
-              destruct (not_veq_false _ _ H').
-              +++ rewrite <- Hsub' in H13. rewrite <- Hx in H13. rewrite Hnull in H13. discriminate H13.
-              +++ erewrite v_tml_sem_cons in H13. Unshelve. Focus 2. exact Ht.
-                Focus 2. intro t2. intro Ht2. apply Html0. right. exact Ht2.
-                simpl in H13. destruct H13.
-                --- left. exact H13.
-                --- right. rewrite Hx, Hsub'. rewrite <- H13. reflexivity.
-              +++ reflexivity.
-            ** rewrite Happ. apply (Ev.tm_sem_weak _ _ _ _ (s::List.nil)).
-        ++ unfold S2.of_bool; intro Hfalse; discriminate Hfalse.
-      * generalize H; clear H. generalize (@eq_refl _ ul).
-        eapply (Vector.caseS' ul (fun ul0 => ul = ul0 -> (forall i : Fin.t (S (length tml0)),
-          S3.is_bfalse (S3.veq (nth ul i) (nth (Ev.v_tml_sem g (t :: tml0) Html0 h') i)) = false) ->
-          S2.is_btrue (SQLSem2.cond_sem d (s :: g) (List.fold_right
-            (fun (ta : pretm * Name) (acc : precond) => let (t1, a) := ta in 
-              (tmvar (0,a) IS NULL) OR (((tm_lift t1 1) IS NULL) OR cndeq (tm_lift t1 1) (tmvar (0, a))) AND acc) (TRUE) (combine tml0 s0)) j0 h) = true)).
-        intros u0 ul0 Hul. rewrite Hul. intro H. cut (length s = length (s1 ++ x :: Datatypes.nil) + length tml0).
-        ++ intro Hcut. eapply (IH _ _ Hcut _ _ ul0 _ h' _ Happ _). Unshelve.
-          -- intro i. pose (H (Fin.FS i)). simpl in e. erewrite v_tml_sem_cons in e. apply e. Unshelve.
-             apply Html0. left. reflexivity.
-          -- rewrite Hs. rewrite <- app_assoc. reflexivity.
-          -- intro t0. intro Ht0. apply Html0. right. exact Ht0.
-          -- generalize Hsub. rewrite Hul. apply cons_is_subenv.
-        ++ rewrite Hs. do 2 rewrite app_length. simpl. rewrite Hlen0. omega.
-Qed.
-*)
-
-(*
-Lemma cond_sem_not_neq_iff d g s tml Hc : forall ul vl,
-  forall h,
-  SQLSem2.cond_sem d (s :: g)%list 
-    (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in ((t IS NULL) OR cndeq t (tmvar (1, a))) AND acc) (TRUE) (combine tml s)) 
-    Hc (Ev.env_app _ _ (Ev.env_of_tuple (s :: List.nil) ul) h) = true
-  <-> forall i, S3.is_bfalse (S3.veq (nth ul i) (nth vl i)) = false.
-Proof.
-  elim Hc.
-*)
-
 Lemma to_list_eq {A} {m} (ul : Vector.t A m) {n} (vl : Vector.t A n) : m = n -> ul ~= vl -> to_list ul = to_list vl.
 Proof.
   intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
@@ -1955,48 +1035,6 @@ Proof.
         ++ omega.
 Qed.
 
-(*
-Lemma tech_sem_not_exists d g tml Html s Hc ul1 (ul2 : Rel.T (length tml)) h :
-  length s = length tml -> ul1 ~= ul2 ->
-  SQLSem2.cond_sem d (s :: g)%list 
-    (List.fold_right (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) (combine tml s)) 
-    Hc (Ev.env_app _ _ (Ev.env_of_tuple (s :: List.nil) ul1) h)
-  = fold_right2 (fun (u0 v0 : Value) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool)
-      true (length tml) ul2 (Ev.v_tml_sem g tml Html h).
-Proof.
-(*
-  intro Hlen. intro.
-  eapply (bool_eq_P _ _ _ _ (fold_right_not_neq_iff (length tml) ul2 (Ev.v_tml_sem g tml Html h))). Unshelve.
-  eapply (cond_sem_not_neq_iff _ _ _ _ Hlen). reflexivity.
-  cut (list_sum (List.map (length (A:=Name)) (s :: Datatypes.nil)) = length tml).
-  - intro Hcut1. cut (length s = 0 + list_sum (List.map (length (A:=Name)) (s :: Datatypes.nil))).
-    * intro Hcut2. eapply (eq_is_subenv _ _ _ Hcut1 _ Hcut2 _ H). unfold is_subenv.
-      intros. unfold Ev.var_sem.
-      cut (forall HSome, Ev.unopt (Ev.env_lookup (s :: g) (Ev.env_app (s :: Datatypes.nil) g (Ev.env_of_tuple (s :: Datatypes.nil) ul1) h) (0, a)) HSome =
-        nth ul1 (Fin.of_nat_lt Hk)).
-      + intro Hcut; apply Hcut.
-      + replace (Ev.env_lookup (s :: g) (Ev.env_app (s::List.nil) g (Ev.env_of_tuple (s :: List.nil) ul1) h) (0, a))
-          with (Some (nth ul1 (Fin.of_nat_lt Hk))).
-        ++ intro. reflexivity.
-        ++ symmetry. simpl. replace (findpos s (fun x : Name => if Db.Name_dec x a then true else false) 0) with (Some k).
-          -- simpl. transitivity (nth_error (to_list ul1) k).
-            ** f_equal. apply to_list_eq.
-              +++ simpl. omega.
-              +++ eapply (@JMeq_trans _ _ _ _ (fst (ul2, Vector.nil Rel.V))).
-                --- generalize ul2 H; clear ul2 H; rewrite <- Hlen; intros ul2 H. apply eq_JMeq.
-                    f_equal. apply JMeq_eq. eapply split_n_0. exact H.
-                --- simpl. symmetry. exact H.
-            ** apply nth_error_Some_nth.
-          -- symmetry. unfold Fin_findpos in H0. destruct (j_var_findpos a s Ha 0).
-            destruct a0. simpl in H0. rewrite Fin.to_nat_of_nat in H0. simpl in H0.
-            rewrite e. rewrite H0. f_equal. omega.
-    * omega.
-  - rewrite <- Hlen. simpl. omega.
-Qed.
-
-*)
-*)
-
   Lemma in_nodup_j_var a s : List.In a s -> List.NoDup s -> j_var a s.
   Proof.
     elim s.
@@ -2039,7 +1077,9 @@ Qed.
                   --- clearbody IH'. apply Hnodup.
                   --- intro. intro. apply Html'. right. exact H.
                   --- intro. intro. apply Hincl. right. exact H.
-              ** contradiction.
+              ** destruct Ht. contradiction n0. symmetry. exact H.
+                 destruct H. contradiction n1. symmetry. exact H.
+                 contradiction H.
       - apply IH.
         * unfold j_tml. intros t1 Ht1. apply Html'. right. exact Ht1.
         * unfold incl. intros a1 Ha1. apply Hincl. right. exact Ha1.
@@ -2568,14 +1608,6 @@ Qed.
     + intro. destruct bl; intuition. discriminate H.
   Qed.
 
-(*
-  Lemma veq_not_neq_cons hd1 hd2 n tl1 tl2 :
-      S3.is_bfalse (S3.veq hd1 hd2) = false ->
-      (forall i, S3.is_bfalse (S3.veq (nth tl1 i) (nth tl2 i)) = false) ->
-      forall i, S3.is_bfalse (S3.veq (nth (cons _ hd1 n tl1) i) (nth (cons _ hd2 n tl2) i)) = false.
-  Admitted.
-*)
-
   Lemma not_veq_false' v w : 
     S3.is_bfalse (S3.veq v w) = false <-> v = null \/ w = null \/ 
       exists cv cw, v = Some cv /\ w = Some cw /\ Db.c_eq cv cw = true.
@@ -2847,25 +1879,6 @@ Qed.
     Sc (Ev.env_app _ _ (Ev.env_of_tuple (s :: List.nil) ul1) h)
     = fold_right2 (fun (u0 v0 : Value) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool)
         true (length tml) ul2 (Stml h).
-(*
-  Lemma tech_j_cond_fold_vect' d s0 n (s : Vector.t Name n) g (tml : Vector.t pretm n) :
-    List.NoDup s0 -> forall Stml, Ev.j_tml_sem g (to_list tml) Stml -> incl (to_list s) s0 ->
-    exists Sc : Ev.env ((s0 :: Datatypes.nil) ++ g) -> S2.B,
-    SQLSem2.j_cond_sem d ((s0 :: Datatypes.nil) ++ g)
-      (List.fold_right
-       (fun (ta : pretm * Name) (acc : precond) =>
-        let (t, a) := ta in
-        ((tmvar (0, a) IS NULL) OR ((tm_lift t 1 IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a)))) AND acc) 
-       (TRUE) (combine (VectorDef.to_list tml) (VectorDef.to_list s))) Sc.
-  Proof.
-
-    eapply (Vector.rect2 (fun n s' tml' => 
-      forall Stml, Ev.j_tml_sem g (to_list tml') Stml -> incl (to_list s') s0 -> 
-      exists Sc,
-      SQLSem2.j_cond_sem d ((s0 :: List.nil) ++ g) (List.fold_right
-        (fun (ta : pretm * Name) acc => let (t, a) := ta in (tmvar (0,a) IS NULL) OR (((tm_lift t 1) IS NULL) OR cndeq (tm_lift t 1) (tmvar (0, a))) AND acc) (TRUE) 
-        (combine (to_list tml') (to_list s'))) Sc)
-      _ _ s tml). Unshelve.*)
   Proof.
     intros Hlen Heq Hc Html.
     enough 
@@ -2985,19 +1998,6 @@ Qed.
       rewrite <- app_assoc. reflexivity.
       rewrite <- app_assoc. reflexivity.
   Qed.
-
-(*
-  Lemma vector_append_nil_r {A} {n} (v : Vector.t A n): 
-    append v (Vector.nil _) ~= v.
-  Proof.
-    induction v; intuition.
-    simpl. eapply (f_JMequal (cons A h (n+0)) (cons A h n)). Unshelve.
-    + eapply (f_JMeq _ _ (cons A h)). omega.
-    + exact IHv.
-    + f_equal. omega.
-    + replace (n+0) with n. reflexivity. omega.
-  Qed.
-*)
 
   Lemma cond_sem_not_ex_selstar' d g q s s0 tml Hs0 (Hlens : length s = length s0) 
      Sff Sq Sc (Hff : SQLSem2.j_cond_sem d g (NOT (EXISTS (SELECT * FROM (tbquery (ttquery d q), s0) :: Datatypes.nil
