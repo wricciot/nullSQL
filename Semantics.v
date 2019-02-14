@@ -1,72 +1,5 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool JMeq 
-  FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega.
-
-  Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
-
-  Lemma eq_rect_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect x P p x eq_refl = p. 
-  reflexivity.
-  Qed.
-  Lemma eq_rect_r_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect_r P p eq_refl = p. 
-  reflexivity.
-  Qed.
-  Lemma eq_JMeq {A} {x y : A} (H : x = y) : x ~= y.
-  rewrite H. reflexivity.
-  Qed.
-
-  Fixpoint cmap_length {A B : Type} (f : A -> B) l : List.length (List.map f l) = List.length l.
-  refine (match l with List.nil => _ | List.cons h t => _ end).
-  exact eq_refl.
-  simpl. f_equal. apply cmap_length.
-  Defined.
-
-  Lemma flat_map_length {A B : Type} (f : A -> list B) (l : list A)
-    : List.length (List.flat_map f l) = list_sum (List.map (fun x => List.length (f x)) l).
-  elim l.
-  + reflexivity.
-  + intros a l0 IH. simpl. rewrite app_length.
-    apply f_equal. exact IH.
-  Defined.
-
-  Lemma length_concat_list_sum (A : Type) (l : list (list A)) : 
-    List.length (List.concat l) = list_sum (List.map (@List.length A) l).
-    rewrite <- (map_id l) at 1. rewrite <- flat_map_concat_map.
-    rewrite flat_map_length. apply f_equal. apply map_ext. auto.
-  Defined.
-
-  Definition cast (A B : Type) (e : A = B) (a : A) : B.
-    rewrite <- e. exact a.
-  Defined.
-
-  (* naturally splits a Vector of size (m+n) into two Vectors of sizes m and n *)
-  Fixpoint split {A} {m} {n} : Vector.t A (m+n) -> (Vector.t A m * Vector.t A n).
-  refine
-  (match m as m return Vector.t A (m+n) -> (Vector.t A m * Vector.t A n) with
-   | 0 => fun v => (nil _,v)
-   | S p => fun v => let h := Vector.hd v in let t := Vector.tl v in
-      let (v1,v2) := split _ _ _ t in
-      (Vector.cons _ h _ v1,v2)
-   end).
-  Defined.
-
-  Lemma f_JMeq : forall A (T : A -> Type) (f : forall a, T a) x y, x = y -> f x ~= f y.
-  Proof.
-    intros. rewrite H. reflexivity.
-  Qed.
-
-  Lemma existT_projT2_eq {A} {P : A -> Type} a (p1 p2 :  P a) (e : existT _ _ p1 = existT _ _ p2)
-    : p1 = p2.
-  Proof.
-    transitivity (projT2 (existT P a p1)). reflexivity. 
-    transitivity (projT2 (existT P a p2)). apply JMeq_eq. eapply (f_JMeq _ _ (@projT2 A P) _ _ e).
-    reflexivity.
-  Qed.
-
-  Lemma existT_eq_elim {A} {P : A -> Type} {a} {b} {p1} {p2} (e : existT P a p1 = existT P b p2) :
-    forall (Q:Prop), (a = b -> p1 ~= p2 -> Q) -> Q.
-  Proof.
-    intros. injection e. intros _ H1. generalize dependent p2. generalize dependent p1. 
-    rewrite H1. intros. apply H; auto. apply eq_JMeq. apply (existT_projT2_eq _ _ _ e).
-  Qed.
+  FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Util RelFacts.
 
 Module Type EV (Db : DB) (Sql : SQL Db).
 
@@ -148,17 +81,6 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     + destruct (nth_error h i); intuition. exists v; reflexivity.
     + apply nth_error_Some. rewrite <- H0. pose (findpos_Some _ _ _ _ _ H). omega.
   Qed.
-
-  (* naturally splits a Vector of size (m+n) into two Vectors of sizes m and n *)
-  Fixpoint split {A} {m} {n} : Vector.t A (m+n) -> (Vector.t A m * Vector.t A n).
-  refine
-  (match m as m return Vector.t A (m+n) -> (Vector.t A m * Vector.t A n) with
-   | 0 => fun v => (nil _,v)
-   | S p => fun v => let h := Vector.hd v in let t := Vector.tl v in
-      let (v1,v2) := split _ _ _ t in
-      (Vector.cons _ h _ v1,v2)
-   end).
-  Defined.
 
   Lemma nth_error_map A B n a (f : A -> B) : 
     forall (l : list A), nth_error l n = Some a ->

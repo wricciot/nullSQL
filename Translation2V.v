@@ -1,19 +1,7 @@
 Require Import Eqdep Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool 
-  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance EqdepFacts.
+  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance EqdepFacts Util RelFacts SemFacts.
 
 Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
-
-  (* rename UIP_refl to UIP until we change all occurrences in this file *)
-  Definition UIP : forall A (a : A) (e : a = a), e = eq_refl := UIP_refl.
-  Lemma eq_rect_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect x P p x eq_refl = p. 
-  reflexivity.
-  Qed.
-  Lemma eq_rect_r_eq_refl {A x} {P : A -> Type} {p : P x} : eq_rect_r P p eq_refl = p. 
-  reflexivity.
-  Qed.
-  Lemma eq_JMeq {A} {x y : A} (H : x = y) : x ~= y.
-  rewrite H. reflexivity.
-  Qed.
 
   Definition unopt {A} : forall (x : option A), x <> None -> A.
     refine (fun x => match x as x0 return (x0 <> None -> A) with Some x' => fun _ => x' | None => _ end).
@@ -27,6 +15,11 @@ Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
 Module Translation2V (Db : DB) (Sql : SQL Db).
   Import Db.
   Import Sql.
+
+  Module RF := RelFacts.Facts Db Sql.
+  Module SF := SemFacts.Facts Db Sql.
+  Import RF.
+  Import SF.
 
   Module S2 := Sem2 Db.
   Module S3 := Sem3 Db.
@@ -210,50 +203,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
   Unshelve. all: simpl; intros; auto.
   Qed.
 
-Fixpoint rmone A (eq_dec : forall x y : A, {x = y}+{x <> y}) a (l : list A) : list A :=
-    match l with
-      | List.nil => List.nil
-      | x::xs => if eq_dec x a then xs else x::(rmone A eq_dec a xs)
-    end.
-
-Lemma count_occ_rmone_zero A Hdec a l : 
-  count_occ Hdec l a = 0 -> count_occ Hdec (rmone A Hdec a l) a = 0.
-Proof.
-  elim l. intuition.
-  simpl. intros h t IH. destruct (Hdec h a).
-  + intro H. discriminate H.
-  + simpl. intro H. destruct (Hdec h a). intuition.
-    exact (IH H).
-Qed.
-
-Lemma count_occ_rmone A Hdec a l :
-  forall n, count_occ Hdec l a = S n -> count_occ Hdec (rmone A Hdec a l) a = count_occ Hdec l a - 1.
-Proof.
-  elim l; simpl.
-  + intuition.
-  + intros h t IH n. destruct (Hdec h a).
-    - intro Hta. simpl. intuition.
-    - simpl. destruct (Hdec h a). intuition.
-      apply IH.
-Qed.
-
-Lemma count_occ_rmone_r A Hdec a l :
-  forall n, count_occ Hdec l a = S n -> count_occ Hdec l a = S (count_occ Hdec (rmone A Hdec a l) a).
-Proof.
-  intros. rewrite H. f_equal. rewrite (count_occ_rmone _ _ _ _ _ H). rewrite H. omega.
-Qed.
-
-Lemma count_occ_list_sum Hdec n l :
-  O < count_occ Hdec l n -> list_sum l = n + list_sum (rmone nat Hdec n l).
-Proof.
-  elim l; simpl.
-  + intro. contradiction (Lt.lt_0_neq _ H). reflexivity.
-  + intros m l0 IH. destruct (Hdec m n).
-    - rewrite e. intros _. reflexivity.
-    - simpl. intro H. rewrite (IH H). omega.
-Qed.
-
-
 Lemma le_list_sum_count_occ H l1 : 
   forall l2, (forall x, count_occ H l1 x <= count_occ H l2 x) ->
   list_sum l1 <= list_sum l2.
@@ -349,34 +298,6 @@ Qed.
     intros. inversion H0. destruct (f a); simpl; auto.
     constructor; auto. intro; apply H3.
     destruct (proj1 (filter_In f a l0) H5). exact H6.
-  Qed.
-
-  Lemma list_sum_ext Hdec l1 :
-    forall l2, (forall x, count_occ Hdec l1 x = count_occ Hdec l2 x) ->
-    list_sum l1 = list_sum l2.
-  Proof.
-    elim l1; simpl.
-    + intros. replace l2 with (@List.nil nat). reflexivity.
-      destruct l2; auto. pose (e := H n); clearbody e; simpl in e. destruct (Hdec n n).
-      - discriminate e.
-      - contradiction n0. reflexivity.
-    + intros x l1' IH l2 Hcount. assert (0 < count_occ Hdec l2 x).
-      rewrite <- Hcount. destruct (Hdec x x). omega. contradiction n. reflexivity.
-      rewrite (count_occ_list_sum _ _ _ H). f_equal. apply IH.
-      intro y. pose (Hcount' := Hcount y); clearbody Hcount'.
-      destruct (Hdec x y).
-      - subst. assert (exists n, count_occ Hdec l2 y = S n).
-        inversion H; eexists; intuition. destruct H0.
-        erewrite count_occ_rmone.
-        * rewrite <- Hcount'. omega.
-        * exact H0.
-      - rewrite Hcount'. elim l2; auto.
-        intros z l2' IHin. simpl. destruct (Hdec z x).
-        * destruct (Hdec z y); auto.
-          contradiction n. rewrite <- e, e0. reflexivity.
-        * simpl. destruct (Hdec z y); simpl.
-          ++ f_equal. apply IHin.
-          ++ apply IHin.
   Qed.
 
   Lemma count_occ_In_Sn {A} Hdec (x : A) l: List.In x l -> exists n, count_occ Hdec l x = S n.
@@ -563,19 +484,6 @@ Qed.
     rewrite e. intros. rewrite H. reflexivity.
   Qed.
 
-  Lemma eq_memb_dep m n (e : m = n) : forall (S1 : Rel.R m) (S2 : Rel.R n) r1 r2,
-    S1 ~= S2 -> r1 ~= r2 -> Rel.memb S1 r1 = Rel.memb S2 r2.
-  Proof.
-    rewrite e. intros. rewrite H, H0. reflexivity.
-  Qed.
-
-  Lemma p_ext_dep m n (e : m = n) : forall (S1 : Rel.R m) (S2 : Rel.R n),
-      (forall r1 r2, r1 ~= r2 -> Rel.memb S1 r1 = Rel.memb S2 r2) -> S1 ~= S2.
-  Proof.
-    rewrite e. intros. apply eq_JMeq. apply Rel.p_ext. 
-    intro. apply H. reflexivity.
-  Qed.
-
   Lemma JMeq_eq_rect_r A T (a1 a2: A) (e : a1 = a2) (p : A -> Type) :
     forall (x : p a2) (y : T), x ~= y -> eq_rect_r p x e ~= y.
   Proof.
@@ -593,7 +501,7 @@ Qed.
   Lemma eq_cast_fun A B C (e : B = A) :
     forall (ef : (A -> C) = (B -> C)) (f : A -> C) (x : B), cast _ _ ef f x = f (cast _ _ e x).
   Proof.
-    rewrite e. intro. rewrite (UIP _ _ ef). intros.
+    rewrite e. intro. rewrite (UIP_refl _ _ ef). intros.
     unfold cast. reflexivity.
   Qed.
 
@@ -971,7 +879,7 @@ Proof.
     intros. apply S2.sem_bpred_elim.
     - intro. rewrite eSt1, eSt2. simpl. intro Hret. injection Hret. clear Hret. intros Hret.
       rewrite <- Hret. simpl. intro Htriv.
-      rewrite (UIP _ _ Htriv). rewrite H. repeat rewrite eq_rect_r_eq_refl. 
+      rewrite (UIP_refl _ _ Htriv). rewrite H. repeat rewrite eq_rect_r_eq_refl. 
       unfold S2.of_bool, nth_lt. simpl. apply Db.BaseConst_eqb_eq. reflexivity.
     - simpl. rewrite eSt1, eSt2. simpl. intro Hfalse. discriminate Hfalse. 
       Unshelve. reflexivity.
@@ -993,7 +901,7 @@ Proof.
 Qed.
 
 
-Lemma split_n_0 {A} {n} : forall (ul1 : Vector.t A (n+0)) (ul2 : Vector.t A n), ul1 ~= ul2 -> Ev.split ul1 ~= (ul2, nil A).
+Lemma split_n_0 {A} {n} : forall (ul1 : Vector.t A (n+0)) (ul2 : Vector.t A n), ul1 ~= ul2 -> split ul1 ~= (ul2, nil A).
 Proof.
   elim n.
   + simpl. intros. 
@@ -1001,12 +909,12 @@ Proof.
     eapply (Vector.case0 (fun ul0 => (nil A, nil A) ~= (ul0, nil A))). reflexivity.
   + clear n. intros n IH ul1 ul2. simpl. intro.
     generalize (@JMeq_refl _ ul1).
-    eapply (Vector.caseS (fun n0 ul0 => ul1 ~= ul0 -> (let (v1,v2) := Ev.split (tl ul1) in (cons A (hd ul1) n v1, v2)) ~= (ul2, nil A))).
+    eapply (Vector.caseS (fun n0 ul0 => ul1 ~= ul0 -> (let (v1,v2) := split (tl ul1) in (cons A (hd ul1) n v1, v2)) ~= (ul2, nil A))).
     intros h n0. replace n0 with (n0 + 0).
     - intro tl1. intro H1. cut (tl ul1 ~= tl ul2).
       * intro Hcut. pose (IH' := IH _ _ Hcut); clearbody IH'.
         pose (f := fun n (x : Vector.t A n * Vector.t A 0) => let (v1, v2) := x in (cons A (hd ul1) n v1, v2)).
-        cut (f _ (Ev.split (tl ul1)) ~= f _ (tl ul2, nil A)).
+        cut (f _ (split (tl ul1)) ~= f _ (tl ul2, nil A)).
         ++ unfold f. intro Hf. eapply (JMeq_trans Hf). apply eq_JMeq. f_equal.
           replace ul2 with (cons A (hd ul2) n (tl ul2)).
           -- f_equal. apply hd_eq. apply plus_0_r. exact H.

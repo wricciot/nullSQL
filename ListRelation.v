@@ -1,4 +1,4 @@
-Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat AbstractRelation OrdType SortedList Omega JMeq.
+Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat AbstractRelation OrdType SortedList Omega JMeq Util.
 
 Module MultiSet (O : OrdType.OrdType) <: REL.
 

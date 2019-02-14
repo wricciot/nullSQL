@@ -1,10 +1,4 @@
-Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat.
-
-(* sums a Vector of nats *)
-Definition vec_sum {k} (nl : Vector.t nat k) :=
-  Vector.fold_right plus nl 0.
-
-Definition list_sum (nl : list nat) := List.fold_right plus 0 nl.
+Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Util.
 
 Module Type REL.
   Parameter R : nat -> Type.
