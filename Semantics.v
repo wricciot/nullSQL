@@ -189,12 +189,6 @@ Module Evl (Db : DB) (Sql : SQL Db) <: EV Db Sql.
     simpl. rewrite <- (proj1 (Nat.eqb_eq _ _) e). rewrite concat_app. rewrite app_length. omega.
   Defined.
 
-  Lemma length_skipn {A} (l : list A) :
-    forall n, length (skipn n l) = length l - n.
-  Proof.
-    induction l; simpl; intuition; case n; intuition.
-  Qed.
-
   Definition subenv2 {G1} {G2} : env (G1++G2) -> env G2.
     refine (fun h => _).
     enough ((length (concat G2) =? length (skipn (length (concat G1)) (projT1 h))) = true).

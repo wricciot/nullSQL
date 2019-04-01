@@ -413,3 +413,476 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     + intros. destruct n; auto. simpl. apply IHl1. simpl in H. omega.
   Qed.
 
+  Lemma filter_true A p (l : list A) : 
+    (forall x, List.In x l -> p x = true) -> filter p l = l.
+  Proof.
+    elim l. auto.
+    intros h t IH Hp. simpl. rewrite Hp.
+    + f_equal. apply IH. intros. apply Hp. right. exact H.
+    + left. reflexivity.
+  Qed.
+
+  Lemma count_occ_In_Sn {A} Hdec (x : A) l: List.In x l -> exists n, count_occ Hdec l x = S n.
+  Proof.
+    intro Hx. assert (count_occ Hdec l x > 0).
+    apply count_occ_In. exact Hx.
+    inversion H; eexists; auto.
+  Qed.
+
+  Lemma in_rmone A Hdec a x l2 : List.In x (rmone A Hdec a l2) -> List.In x l2.
+  Proof.
+    elim l2; simpl; intuition. destruct (Hdec a0 a); intuition.
+    inversion H0; intuition.
+  Qed.
+
+  Lemma in_rmone_neq A Hdec a x l2 : a <> x -> List.In x l2 -> List.In x (rmone A Hdec a l2).
+  Proof.
+    intro Hax. elim l2; intuition.
+    inversion H0; intuition.
+    + simpl. destruct (Hdec a0 a); intuition.
+      - subst. contradiction Hax. reflexivity.
+      - rewrite H1. left. reflexivity.
+    + simpl. destruct (Hdec a0 a); intuition.
+  Qed.
+
+  Lemma nodup_rmone A Hdec a l2 : NoDup l2 -> NoDup (rmone A Hdec a l2).
+  Proof.
+    elim l2; intuition. inversion H0.
+    simpl. destruct (Hdec a0 a).
+    + exact H4.
+    + constructor. intro. apply H3. apply (in_rmone _ _ _ _ _ H5).
+      apply H. inversion H0; intuition.
+  Qed.
+
+  Lemma incl_rmone {A} Hdec (l1 l2 : list A) x : 
+    NoDup l1 -> incl l1 (x :: l2) -> incl (rmone A Hdec x l1) l2.
+  Proof.
+    intros H H1. intro. intro H2. pose (H2' := in_rmone _ _ _ _ _ H2). clearbody H2'.
+    pose (H1' := H1 _ H2'). clearbody H1'. assert (a <> x).
+    + intro. subst. generalize H H2. elim l1.
+      - simpl; intuition.
+      - intros a l IH Hnodup. simpl. destruct (Hdec a x).
+        * subst. intro. inversion Hnodup. contradiction H5.
+        * intro. destruct H0. contradiction n. apply IH. inversion Hnodup; auto. exact H0.
+    + destruct H1'; auto. subst. contradiction H0. reflexivity.
+  Qed.
+
+  Lemma map_filter_tech {A} {B} {Hdec} {Hdec'} (f : A -> B) p x y l : 
+    p x = true -> y = f x -> List.In x l ->
+    count_occ Hdec (List.map f (filter p (rmone _ Hdec' x l))) y 
+    = count_occ Hdec (rmone _ Hdec y (List.map f (filter p l))) y.
+  Proof.
+    intros H H0. elim l; auto.
+    intros a l' IH Hl. simpl. destruct (Hdec' a x).
+    + rewrite e. rewrite H. simpl. destruct (Hdec (f x) y).
+      - reflexivity.
+      - contradiction n. symmetry. exact H0.
+    + simpl. assert (List.In x l'). inversion Hl. contradiction n. exact H1. 
+      destruct (p a) eqn:Hp; simpl.
+      - destruct (Hdec (f a) y).
+        * rewrite IH; auto. symmetry. 
+          assert (List.In y (List.map f (filter p l'))).
+          rewrite H0. apply in_map. apply filter_In; split; auto.
+          destruct (count_occ_In_Sn Hdec _ _ H2).
+          eapply count_occ_rmone_r. exact H3.
+        * rewrite IH; auto. simpl. destruct (Hdec (f a) y). contradiction n0. reflexivity.
+      - apply IH. inversion Hl; auto.
+  Qed.
+
+  Lemma count_occ_map_filter_rmone_tech {A} {B} {Hdec} {Hdec'} (f : A -> B) p x y l:
+    f x <> y ->
+    count_occ Hdec (List.map f (filter p (rmone _ Hdec' x l))) y
+    = count_occ Hdec (List.map f (filter p l)) y.
+  Proof.
+    intros. elim l; auto.
+    intros a l' IH. simpl. destruct (Hdec' a x).
+    + rewrite e. destruct (p x); simpl.
+      - destruct (Hdec (f x) y); simpl.
+        * contradiction H.
+        * reflexivity.
+      - reflexivity.
+    + simpl. destruct (p a); simpl.
+      - destruct (Hdec (f a) y); simpl.
+        * f_equal. apply IH.
+        * apply IH.
+      - apply IH.
+  Qed.
+
+  Lemma filter_rmone_false {A} {Hdec} p (x : A) l : p x = false -> filter p (rmone _ Hdec x l) = filter p l.
+  Proof.
+    intro. elim l; auto.
+    intros a l' IH. simpl. destruct (Hdec a x); simpl.
+    + rewrite e. rewrite H. reflexivity.
+    + destruct (p a).
+      - rewrite IH. reflexivity.
+      - exact IH.
+  Qed.
+
+  Lemma NoDup_filter {A} (f : A -> bool) l : List.NoDup l -> List.NoDup (filter f l).
+  Proof.
+    elim l; simpl; auto.
+    intros. inversion H0. destruct (f a); simpl; auto.
+    constructor; auto. intro; apply H3.
+    destruct (proj1 (filter_In f a l0) H5). exact H6.
+  Qed.
+
+  Lemma exists_vector_append A m n p (v : Vector.t A m) : 
+    m = n + p -> exists (w1 : Vector.t A n) (w2 : Vector.t A p), v ~= append w1 w2.
+  Proof.
+    intro H. generalize dependent v. rewrite H. intro v.
+    exists (fst (split v)). exists (snd (split v)).
+    apply (split_ind v). intuition. rewrite H0. reflexivity.
+  Qed.
+
+  Lemma list_length_decompose A (l : list A) m n: length l = S (m + n) -> 
+    exists a l1 l2, length l1 = m /\ length l2 = n /\ l = l1 ++ a :: l2.
+  Proof.
+    generalize dependent l. induction m; intuition.
+    + destruct l; simpl in H; try discriminate. injection H.
+      exists a. exists List.nil. exists l. intuition.
+    + destruct l; simpl in H; try discriminate. injection H. intro.
+      decompose record (IHm _ H0).
+      exists x. exists (a::x0). exists x1. simpl. intuition. rewrite H4. reflexivity.
+  Qed.
+
+  Lemma length_skipn {A} (l : list A) :
+    forall n, length (skipn n l) = length l - n.
+  Proof.
+    induction l; simpl; intuition; case n; intuition.
+  Qed.
+
+  Lemma funext_JMeq {A} {B} {A'} {B'} :
+    A = A' -> B = B' -> forall (f : A -> B) (g : A' -> B'),
+    (forall x y, x ~= y -> f x ~= g y) -> f ~= g.
+  Proof.
+    intros e1 e2. rewrite e1, e2.
+    intros. apply eq_JMeq. extensionality x. apply JMeq_eq. apply H. reflexivity.
+  Qed.
+
+  Definition unopt {A} : forall (x : option A), x <> None -> A.
+    refine (fun x => match x as x0 return (x0 <> None -> A) with Some x' => fun _ => x' | None => _ end).
+    intro Hfalse. contradiction Hfalse. reflexivity.
+  Defined.
+
+  Definition nth_lt {A} : forall (l : list A) n, n < length l -> A.
+    refine (fun l n Hn => unopt (nth_error l n) _). apply nth_error_Some. exact Hn.
+  Defined.
+
+  Lemma le_list_sum_count_occ H l1 : 
+    forall l2, (forall x, count_occ H l1 x <= count_occ H l2 x) ->
+    list_sum l1 <= list_sum l2.
+  elim l1. intuition.
+  intros h t IH l2 Hcount. rewrite (count_occ_list_sum H h l2).
+  + simpl. apply plus_le_compat_l. apply IH. intro.
+    replace (count_occ H t x) with (count_occ H (rmone nat H h (h::t)) x).
+    - pose (Hx := (Hcount x)). simpl in Hx. clearbody Hx. destruct (H h x).
+      rewrite e. cut (exists m, count_occ H l2 x = S m).
+      * intro Hcut. decompose record Hcut.
+        erewrite (count_occ_rmone _ _ _ l2).
+        erewrite (count_occ_rmone _ _ _ (x :: t)).
+        ++ apply minus_le_compat_r. rewrite e in Hcount. apply Hcount.
+        ++ simpl. destruct (H x x); intuition.
+        ++ exact H0.
+      * inversion Hx.
+        ++ exists (count_occ H t x). reflexivity.
+        ++ exists m. reflexivity.
+      * simpl. destruct (H h h); intuition. replace (count_occ H (rmone nat H h l2) x) with (count_occ H l2 x).
+        ++ exact Hx.
+        ++ elim l2; intuition.
+           simpl. destruct (H a x) eqn:e'.
+           -- destruct (H a h).
+              ** rewrite e0 in e1. rewrite e1 in n. contradiction n.
+              ** simpl. destruct (H a x); intuition.
+           -- destruct (H a h); intuition. simpl. rewrite e'. apply H0.
+    - simpl. destruct (H h h); intuition.
+  + eapply (lt_le_trans _ _ _ _ (Hcount h)). Unshelve.
+    simpl. destruct (H h h); intuition.
+  Qed.
+
+  Lemma le_count_occ_cons A Hdec (a : A) l x : count_occ Hdec l x <= count_occ Hdec (a::l) x.
+  Proof.
+    simpl. destruct (Hdec a x); intuition.
+  Qed.
+
+  Lemma count_occ_not_in A Hdec (a x : A) l : a <> x -> count_occ Hdec l x = count_occ Hdec (rmone A Hdec a l) x.
+  Proof.
+    intro. elim l; auto.
+    intros h t IH. simpl. destruct (Hdec h x); intuition.
+    + destruct (Hdec h a); intuition.
+      - contradiction H. rewrite <- e0. exact e.
+      - simpl. destruct (Hdec h x); intuition.
+    + destruct (Hdec h a); intuition.
+      simpl. destruct (Hdec h x); intuition.
+  Qed.
+
+  Lemma list_sum_map_rmone A Hdec g l (a : A) : 
+    forall x, count_occ Hdec l a = S x -> list_sum (List.map g l) = g a + list_sum (List.map g (rmone A Hdec a l)).
+  Proof.
+    elim l; simpl; intuition.
+    destruct (Hdec a0 a); intuition.
+    + rewrite e. reflexivity.
+    + simpl. rewrite (H _ H0). omega.
+  Qed.
+
+  Lemma fun_ext_dep A B C (e : A = B) : 
+    forall (f : A -> C) (g : B -> C), (forall (x : A) (y : B), x ~= y -> f x = g y) -> f ~= g.
+  Proof.
+    rewrite e. intros.
+    apply eq_JMeq. extensionality z.
+    apply H. reflexivity.
+  Qed.
+
+  Lemma eq_cast_fun A B C (e : B = A) :
+    forall (ef : (A -> C) = (B -> C)) (f : A -> C) (x : B), cast _ _ ef f x = f (cast _ _ e x).
+  Proof.
+    rewrite e. intro. rewrite (UIP_refl _ _ ef). intros.
+    unfold cast. reflexivity.
+  Qed.
+
+  Lemma le_list_sum_memb_tech A (Hdec : forall x y : A, { x = y } + { x <> y }) f g (l1 : list A) (Hfg : forall x, f x <= g x) : 
+    forall l2, NoDup l1 -> NoDup l2 -> (forall x, List.In x l1 -> 0 < f x -> List.In x l2) ->
+    list_sum (List.map f l1) <= list_sum (List.map g l2).
+  elim l1; intuition.
+  simpl. destruct (f a) eqn:Hfa.
+  + apply H; auto; intros.
+    - inversion H0; auto.
+    - apply H2; auto. right. exact H3.
+  + replace (list_sum (List.map g l2)) with (g a + list_sum (List.map g (rmone A Hdec a l2))).
+    - rewrite <- Hfa. apply plus_le_compat; auto. apply H.
+      * inversion H0; auto.
+      * apply nodup_rmone. exact H1.
+      * intros y Hy Hfy. cut (a <> y).
+        ++ intro Hay. apply in_rmone_neq. 
+           -- exact Hay.
+           -- apply H2; intuition.
+        ++ inversion H0; auto. intro. contradiction H5. rewrite H7. exact Hy.
+    - cut (List.In a l2).
+      * intro Hcut. rewrite (count_occ_list_sum Nat.eq_dec (g a) (List.map g l2)).
+        ++ f_equal. generalize Hcut; clear Hcut. elim l2; intuition.
+           destruct Hcut; simpl.
+           -- rewrite H4. destruct (Nat.eq_dec (g a) (g a)); intuition. destruct (Hdec a a); intuition.
+           -- destruct (Hdec a0 a); intuition.
+              ** rewrite e. destruct (Nat.eq_dec (g a) (g a)); intuition.
+              ** destruct (Nat.eq_dec (g a0) (g a)); intuition.
+                 +++ simpl. rewrite e. symmetry. cut (exists n, count_occ Hdec l0 a = S n).
+                     intro Hcut; decompose record Hcut. apply (list_sum_map_rmone _ _ _ _ _ _ H3).
+                     destruct (count_occ_In Hdec l0 a).
+                     pose (H3 H4). inversion g0; eexists; reflexivity.
+                 +++ simpl. f_equal. apply H5.
+        ++ generalize Hcut; clear Hcut. elim l2; simpl.
+           -- intro. contradiction Hcut.
+           -- intros. destruct Hcut.
+              ** rewrite H4. destruct (Nat.eq_dec (g a) (g a)); intuition.
+              ** pose (H3 H4). destruct (Nat.eq_dec (g a0) (g a)); omega.
+      * apply H2. left. reflexivity. omega.
+  Qed.
+
+  Lemma le_list_sum_memb A Hdec f g (l1 l2 : list A) (Hfg : forall x, f x <= g x) : 
+    (forall x, count_occ Hdec l1 x <= count_occ Hdec l2 x) ->
+    list_sum (List.map f l1) <= list_sum (List.map g l2).
+  intro Hcount. generalize l2 Hcount. clear l2 Hcount. elim l1; intuition.
+  simpl. cut (exists n, count_occ Hdec l2 a = S n).
+  + intro Hcut. decompose record Hcut. clear Hcut.
+    replace (list_sum (List.map g l2)) with (g a + list_sum (List.map g (rmone A Hdec a l2))).
+    - apply plus_le_compat; auto. apply H. 
+      intro y. destruct (Hdec a y).
+      * rewrite e in H0. rewrite e. rewrite (count_occ_rmone _ _ _ _ _ H0). 
+        rewrite H0. transitivity x. pose (Hy := Hcount y). clearbody Hy.
+        rewrite H0 in Hy. simpl in Hy. destruct (Hdec a y); intuition.
+        omega.
+      * replace (count_occ Hdec (rmone A Hdec a l2) y) with (count_occ Hdec l2 y).
+        ++ transitivity (count_occ Hdec (a :: l) y).
+           -- apply le_count_occ_cons.
+           -- apply Hcount.
+        ++ apply count_occ_not_in. auto.
+    - rewrite (list_sum_map_rmone _ _ _ _ _ _ H0). reflexivity.
+  + pose (Ha := Hcount a); clearbody Ha; simpl in Ha. destruct (Hdec a a); intuition.
+    inversion Ha; eexists; reflexivity.
+  Qed.
+
+  Lemma le_list_sum_memb_f A Hdec f (l1 l2 : list A) : 
+    (forall x, count_occ Hdec l1 x <= count_occ Hdec l2 x) ->
+    list_sum (List.map f l1) <= list_sum (List.map f l2).
+  Proof.
+    apply le_list_sum_memb. auto.
+  Qed.
+
+  Lemma le_list_sum_map_f_g A f g (l : list A) : 
+    (forall x, f x <= g x) ->
+    list_sum (List.map f l) <= list_sum (List.map g l).
+  Proof.
+    intro Hfg. elim l; intuition.
+    simpl. apply plus_le_compat;auto.
+  Qed.
+
+  Lemma le_1_or : forall x, x <= 1 -> x = 0 \/ x = 1.
+  Proof.
+    intros. inversion H. auto. inversion H1. auto.
+  Qed.
+
+  Lemma list_rect2 {A} {B} {P : list A -> list B -> Type} :
+         P Datatypes.nil Datatypes.nil -> 
+         (forall a1 a2 l1 l2, length l1 = length l2 -> P l1 l2 -> P (a1 :: l1) (a2 :: l2)) -> 
+         forall l1 l2, length l1 = length l2 -> P l1 l2.
+  Proof.
+    intros Hbase Hind l1. elim l1.
+    + intro; destruct l2; intuition. simpl in H. discriminate H.
+    + intros a l1' IH l2. destruct l2; intuition. simpl in H. discriminate H.
+  Qed.
+
+  Lemma Vector_cons_equal {A} {m} {n} a1 a2 (v1 : Vector.t A m) (v2 : Vector.t A n) :
+    m ~= n -> a1 ~= a2 -> v1 ~= v2 -> cons A a1 m v1 ~= cons A a2 n v2.
+  Proof.
+    intro. generalize v1; clear v1. rewrite H. intros. rewrite H0, H1. reflexivity.
+  Qed.
+
+  Lemma of_list_equal {A} (l1 l2 : list A) :
+    l1 = l2 -> of_list l1 ~= of_list l2.
+  Proof.
+    intro. rewrite H. reflexivity.
+  Qed.
+
+  Definition projT1_eq {A} {P : A -> Type} {u v : { a : A & P a }} (p : u = v)
+    : projT1 u = projT1 v
+    := f_equal (@projT1 _ _) p.
+
+  Definition projT2_eq {A} {P : A -> Type} {u v : { a : A & P a }} (p : u = v)
+    : @eq_rect _ _ _ (projT2 u) _ (projT1_eq p) = projT2 v.
+  Proof.
+    rewrite p. reflexivity.
+  Qed.
+
+  Lemma list_In_vec_In {A} (a : A) (l : list A) : List.In a l -> Vector.In a (Vector.of_list l).
+  Proof.
+    elim l.
+    + intro H. contradiction H.
+    + intros a0 l0 IH H. destruct H.
+      - rewrite H. constructor.
+      - constructor. apply IH. exact H.
+  Qed.
+
+  Lemma bool_eq_P (P : Prop) b1 b2 : (b1 = true <-> P) -> (b2 = true <-> P) -> b1 = b2.
+  Proof.
+    Bool.destr_bool.
+    + apply H. apply H0. reflexivity.
+    + symmetry. apply H0. apply H. reflexivity.
+  Qed.
+
+  Lemma to_list_eq {A} {m} (ul : Vector.t A m) {n} (vl : Vector.t A n) : m = n -> ul ~= vl -> to_list ul = to_list vl.
+  Proof.
+    intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
+  Qed.
+
+  Lemma hd_eq {A} {m} (ul : Vector.t A (S m)) {n} (vl : Vector.t A (S n)) : m = n -> ul ~= vl -> hd ul = hd vl.
+  Proof.
+    intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
+  Qed.
+
+  Lemma tl_eq {A} {m} (ul : Vector.t A (S m)) {n} (vl : Vector.t A (S n)) : m = n -> ul ~= vl -> tl ul ~= tl vl.
+  Proof.
+    intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
+  Qed.
+
+  Lemma split_n_0 {A} {n} : forall (ul1 : Vector.t A (n+0)) (ul2 : Vector.t A n), ul1 ~= ul2 -> split ul1 ~= (ul2, nil A).
+  Proof.
+    elim n.
+    + simpl. intros. 
+      eapply (Vector.case0 (fun ul0 => (nil A, ul0) ~= (ul2, nil A))).
+      eapply (Vector.case0 (fun ul0 => (nil A, nil A) ~= (ul0, nil A))). reflexivity.
+    + clear n. intros n IH ul1 ul2. simpl. intro.
+      generalize (@JMeq_refl _ ul1).
+      eapply (Vector.caseS (fun n0 ul0 => ul1 ~= ul0 -> (let (v1,v2) := split (tl ul1) in (cons A (hd ul1) n v1, v2)) ~= (ul2, nil A))).
+      intros h n0. replace n0 with (n0 + 0).
+      - intro tl1. intro H1. cut (tl ul1 ~= tl ul2).
+        * intro Hcut. pose (IH' := IH _ _ Hcut); clearbody IH'.
+          pose (f := fun n (x : Vector.t A n * Vector.t A 0) => let (v1, v2) := x in (cons A (hd ul1) n v1, v2)).
+          cut (f _ (split (tl ul1)) ~= f _ (tl ul2, nil A)).
+          ++ unfold f. intro Hf. eapply (JMeq_trans Hf). apply eq_JMeq. f_equal.
+            replace ul2 with (cons A (hd ul2) n (tl ul2)).
+            -- f_equal. apply hd_eq. apply plus_0_r. exact H.
+            -- eapply (Vector.caseS (fun n0 ul0 => cons A (hd ul0) n0 (tl ul0) = ul0)). intuition.
+          ++ rewrite IH'. reflexivity.
+        * apply tl_eq. apply plus_0_r. exact H.
+      - apply plus_0_r.
+  Qed.
+
+  Lemma nth_error_Some_nth {A} {n} (ul : Vector.t A n) : forall k (Hk : k < n),
+    nth_error (to_list ul) k = Some (nth ul (Fin.of_nat_lt Hk)).
+  Proof.
+    elim ul.
+    + intros k Hk. absurd (k < 0). omega. exact Hk.
+    + clear n ul. intros h n ul IH k. destruct k.
+      - simpl. intuition.
+      - intro Hk. transitivity (nth_error (to_list ul) k).
+        * reflexivity.
+        * cut (k < n).
+          ++ intro Hk'. rewrite (IH _ Hk'). f_equal.
+            replace (Fin.of_nat_lt Hk) with (Fin.FS (Fin.of_nat_lt Hk')).
+            -- reflexivity.
+            -- transitivity (Fin.of_nat_lt (le_n_S _ _ Hk')).
+              ** simpl. f_equal. apply Fin.of_nat_ext.
+              ** apply Fin.of_nat_ext.
+          ++ omega.
+  Qed.
+
+  Lemma if_true A b x y (P : A -> Prop) : b = true -> P x -> P (if b then x else y).
+  Proof.
+    intros. rewrite H. exact H0.
+  Qed.
+
+  Lemma if_false A b x y (P : A -> Prop) : b = false -> P y -> P (if b then x else y).
+  Proof.
+    intros. rewrite H. exact H0.
+  Qed.
+
+  Lemma if_elim A (b : bool) x y (P : A -> Prop) : P x -> P y -> P (if b then x else y).
+  Proof.
+    intros. destruct b; auto.
+  Qed.
+
+  Lemma eq_rect_dep : forall (A : Type) (x : A) (P : forall (a : A), x = a -> Type), P x eq_refl ->
+    forall y : A, forall e : x = y, P y e.
+  Proof.
+    intros. rewrite <- e. apply X.
+  Qed.
+
+  Lemma bool_contrapos b1 b2 : (b1 = true -> b2 = true) -> b2 = false -> b1 = false.
+  Proof.
+    Bool.destr_bool. discriminate (H eq_refl).
+  Qed.
+
+  Lemma coimpl_trans {P Q R : Prop} (H1 : P <-> Q) (H2 : Q <-> R) : P <-> R.
+  Proof.
+    intuition.
+  Qed.
+
+  Lemma coimpl_sym {P Q : Prop} (H : P <-> Q) : Q <-> P.
+  Proof.
+    intuition.
+  Qed.
+
+  Lemma bool_orb_elim (b1 b2 : bool) (P : Prop) : 
+    (b1 = true -> P) -> (b2 = true -> P) -> (b1 || b2)%bool = true -> P.
+  Proof.
+    Bool.destr_bool; auto.
+  Qed.
+
+  Lemma vector_append_cons {A m n} (v : Vector.t A m) (w : Vector.t A (S n)) : 
+    append v w ~= append (append v (cons A (hd w) _ (nil _))) (tl w).
+  Proof.
+    induction v; simpl.
+    + rewrite <- (Vector.eta w). reflexivity.
+    + eapply (f_JMequal (cons _ _ _) (cons _ _ _)). Unshelve.
+      - eapply (f_JMequal (cons _ _) (cons _ _)). Unshelve. reflexivity. apply eq_JMeq. omega. reflexivity. reflexivity.
+      - exact IHv.
+      - f_equal. omega.
+      - replace (n0 + 1 + n) with (n0 + S n). reflexivity. omega.
+  Qed.
+
+  Lemma unopt_elim {A} (x : option A) H (P : A -> Prop) : 
+    (forall y, x = Some y -> P y) ->
+    P (unopt x H).
+  Proof.
+    destruct x; intuition. contradiction H. reflexivity.
+  Qed.
+

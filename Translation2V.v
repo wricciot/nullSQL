@@ -1,17 +1,6 @@
 Require Import Eqdep Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool 
   Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance EqdepFacts Util RelFacts SemFacts.
 
-Notation " x ~= y " := (@JMeq _ x _ y) (at level 70, no associativity).
-
-  Definition unopt {A} : forall (x : option A), x <> None -> A.
-    refine (fun x => match x as x0 return (x0 <> None -> A) with Some x' => fun _ => x' | None => _ end).
-    intro Hfalse. contradiction Hfalse. reflexivity.
-  Defined.
-
-  Definition nth_lt {A} : forall (l : list A) n, n < length l -> A.
-    refine (fun l n Hn => unopt (nth_error l n) _). apply nth_error_Some. exact Hn.
-  Defined.
-
 Module Translation2V (Db : DB) (Sql : SQL Db).
   Import Db.
   Import Sql.
@@ -91,13 +80,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
     end
   .
 
-  Lemma p_ext' : 
-    forall m n, forall e : m = n, forall r : Rel.R m, forall s : Rel.R n, 
-      (forall t, Rel.memb r t = Rel.memb s (eq_rect _ _ t _ e)) -> r ~= s.
-  intros m n e. rewrite e. simpl.
-  intros. rewrite (Rel.p_ext n r s). constructor. exact H.
-  Qed.
-
   Lemma j_select_inv :
     forall d g b btm btb c s, forall P : (forall g0 q0 s0, j_query d g0 q0 s0 -> Prop),
     (forall g1 H, forall Hbtb : j_btb d g btb g1, forall Hc : j_cond d (g1 ++ g) c,
@@ -107,88 +89,6 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
     P g (select b btm btb c) s H.
   intros d g b btm btb c s P Hinv H. dependent inversion H.
   eapply Hinv. trivial.
-  Qed.
-
-  Lemma S2_is_btrue_and_intro (b1 b2 : bool) :
-    S2.is_btrue b1 = true -> S2.is_btrue b2 = true ->
-    S2.is_btrue (b1 && b2) = true.
-  Proof.
-    Bool.destr_bool.
-  Qed.
-
-  Lemma S2_is_btrue_and_elim (b1 b2 : bool) (P : Prop) :
-    (S2.is_btrue b1 = true -> S2.is_btrue b2 = true -> P) ->
-    S2.is_btrue (b1 && b2) = true -> P.
-  Proof.
-    Bool.destr_bool. auto.
-  Qed.
-
-  Lemma S3_is_btrue_and_intro (b1 b2 : tribool) :
-    S3.is_btrue b1 = true -> S3.is_btrue b2 = true ->
-    S3.is_btrue (b1 && b2) = true.
-  Proof.
-    destr_tribool.
-  Qed.
-
-  Lemma S3_is_btrue_and_elim (b1 b2 : tribool) (P : Prop) :
-    (S3.is_btrue b1 = true -> S3.is_btrue b2 = true -> P) ->
-    S3.is_btrue (b1 && b2) = true -> P.
-  Proof.
-    destr_tribool. auto.
-  Qed.
-
-  Lemma S2_is_btrue_and (b1 b2 : bool) :
-    S2.is_btrue (b1 && b2) = ((S2.is_btrue b1)&&(S2.is_btrue b2))%bool.
-  Proof.
-    Bool.destr_bool.
-  Qed.
-
-  Lemma S3_is_btrue_and (b1 b2 : tribool) :
-    S3.is_btrue (b1 && b2)%tribool = ((S3.is_btrue b1)&&(S3.is_btrue b2))%bool.
-  Proof.
-    destr_tribool.
-  Qed.
-
-  Lemma S2_is_btrue_or (b1 b2 : bool) :
-    S2.is_btrue (b1 || b2) = ((S2.is_btrue b1)||(S2.is_btrue b2))%bool.
-  Proof.
-    Bool.destr_bool.
-  Qed.
-
-  Lemma S3_is_btrue_or (b1 b2 : tribool) :
-    S3.is_btrue (b1 || b2) = ((S3.is_btrue b1)||(S3.is_btrue b2))%bool.
-  Proof.
-    destr_tribool.
-  Qed.
-
-  Lemma eqb_ort_ttrue (b1 b2 : tribool) :
-    eqb (b1 || b2)%tribool ttrue = ((eqb b1 ttrue)||(eqb b2 ttrue))%bool.
-  Proof.
-    destr_tribool.
-  Qed.
-
-  Lemma S2_is_btrue_false_and1 (b1 b2 : bool) :
-    S2.is_btrue b1 = false -> S2.is_btrue (b1 && b2) = false.
-  Proof.
-    Bool.destr_bool.
-  Qed.
-
-  Lemma S2_is_btrue_false_and2 (b1 b2 : bool) :
-    S2.is_btrue b2 = false -> S2.is_btrue (b1 && b2) = false.
-  Proof.
-    Bool.destr_bool.
-  Qed.
-
-  Lemma S3_is_btrue_false_and1 (b1 b2 : tribool) :
-    S3.is_btrue b1 = false -> S3.is_btrue (b1 && b2) = false.
-  Proof.
-    destr_tribool.
-  Qed.
-
-  Lemma S3_is_btrue_false_and2 (b1 b2 : tribool) :
-    S3.is_btrue b2 = false -> S3.is_btrue (b1 && b2) = false.
-  Proof.
-    destr_tribool.
   Qed.
 
   Theorem j_query_j_db : forall d G Q s, j_query d G Q s -> j_db d.
@@ -203,745 +103,76 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
   Unshelve. all: simpl; intros; auto.
   Qed.
 
-Lemma le_list_sum_count_occ H l1 : 
-  forall l2, (forall x, count_occ H l1 x <= count_occ H l2 x) ->
-  list_sum l1 <= list_sum l2.
-elim l1. intuition.
-intros h t IH l2 Hcount. rewrite (count_occ_list_sum H h l2).
-+ simpl. apply plus_le_compat_l. apply IH. intro.
-  replace (count_occ H t x) with (count_occ H (rmone nat H h (h::t)) x).
-  - pose (Hx := (Hcount x)). simpl in Hx. clearbody Hx. destruct (H h x).
-    rewrite e. cut (exists m, count_occ H l2 x = S m).
-    * intro Hcut. decompose record Hcut.
-      erewrite (count_occ_rmone _ _ _ l2).
-      erewrite (count_occ_rmone _ _ _ (x :: t)).
-      ++ apply minus_le_compat_r. rewrite e in Hcount. apply Hcount.
-      ++ simpl. destruct (H x x); intuition.
-      ++ exact H0.
-    * inversion Hx.
-      ++ exists (count_occ H t x). reflexivity.
-      ++ exists m. reflexivity.
-    * simpl. destruct (H h h); intuition. replace (count_occ H (rmone nat H h l2) x) with (count_occ H l2 x).
-      ++ exact Hx.
-      ++ elim l2; intuition.
-         simpl. destruct (H a x) eqn:e'.
-         -- destruct (H a h).
-            ** rewrite e0 in e1. rewrite e1 in n. contradiction n.
-            ** simpl. destruct (H a x); intuition.
-         -- destruct (H a h); intuition. simpl. rewrite e'. apply H0.
-  - simpl. destruct (H h h); intuition.
-+ eapply (lt_le_trans _ _ _ _ (Hcount h)). Unshelve.
-  simpl. destruct (H h h); intuition.
-Qed.
-
-Lemma le_count_occ_cons A Hdec (a : A) l x : count_occ Hdec l x <= count_occ Hdec (a::l) x.
-Proof.
-  simpl. destruct (Hdec a x); intuition.
-Qed.
-
-Lemma count_occ_not_in A Hdec (a x : A) l : a <> x -> count_occ Hdec l x = count_occ Hdec (rmone A Hdec a l) x.
-Proof.
-  intro. elim l; auto.
-  intros h t IH. simpl. destruct (Hdec h x); intuition.
-  + destruct (Hdec h a); intuition.
-    - contradiction H. rewrite <- e0. exact e.
-    - simpl. destruct (Hdec h x); intuition.
-  + destruct (Hdec h a); intuition.
-    simpl. destruct (Hdec h x); intuition.
-Qed.
-
-Lemma list_sum_map_rmone A Hdec g l (a : A) : 
-  forall x, count_occ Hdec l a = S x -> list_sum (List.map g l) = g a + list_sum (List.map g (rmone A Hdec a l)).
-Proof.
-  elim l; simpl; intuition.
-  destruct (Hdec a0 a); intuition.
-  + rewrite e. reflexivity.
-  + simpl. rewrite (H _ H0). omega.
-Qed.
-
-Lemma in_rmone A Hdec a x l2 : List.In x (rmone A Hdec a l2) -> List.In x l2.
-Proof.
-  elim l2; simpl; intuition. destruct (Hdec a0 a); intuition.
-  inversion H0; intuition.
-Qed.
-
-Lemma in_rmone_neq A Hdec a x l2 : a <> x -> List.In x l2 -> List.In x (rmone A Hdec a l2).
-Proof.
-  intro Hax. elim l2; intuition.
-  inversion H0; intuition.
-  + simpl. destruct (Hdec a0 a); intuition.
-    - subst. contradiction Hax. reflexivity.
-    - rewrite H1. left. reflexivity.
-  + simpl. destruct (Hdec a0 a); intuition.
-Qed.
-
-Lemma nodup_rmone A Hdec a l2 : NoDup l2 -> NoDup (rmone A Hdec a l2).
-Proof.
-  elim l2; intuition. inversion H0.
-  simpl. destruct (Hdec a0 a).
-  + exact H4.
-  + constructor. intro. apply H3. apply (in_rmone _ _ _ _ _ H5).
-    apply H. inversion H0; intuition.
-Qed.
-
-Lemma filter_true A p (l : list A) : 
-  (forall x, List.In x l -> p x = true) -> filter p l = l.
-elim l. auto.
-intros h t IH Hp. simpl. rewrite Hp.
-+ f_equal. apply IH. intros. apply Hp. right. exact H.
-+ left. reflexivity.
-Qed.
-
-  Lemma NoDup_filter {A} (f : A -> bool) l : List.NoDup l -> List.NoDup (filter f l).
+  Lemma aux_j_var_findpos' a s :
+    j_var a s -> 
+    forall m, exists n, n < m + length s /\ findpos s (fun x => if Db.Name_dec x a then true else false) m = Some n.
   Proof.
-    elim l; simpl; auto.
-    intros. inversion H0. destruct (f a); simpl; auto.
-    constructor; auto. intro; apply H3.
-    destruct (proj1 (filter_In f a l0) H5). exact H6.
+    intro H. elim H; simpl.
+    + intros. exists m. destruct (Db.Name_dec a a); intuition.
+    + intros. destruct (Db.Name_dec b a); intuition.
+      - rewrite e in H0. contradiction H0. reflexivity.
+      - destruct (H2 (S m)). destruct H3.
+        exists x. split; auto; omega.
   Qed.
 
-  Lemma count_occ_In_Sn {A} Hdec (x : A) l: List.In x l -> exists n, count_occ Hdec l x = S n.
+  Lemma j_var_findpos' a s (Ha : j_var a s) : findpos s (fun x => if Db.Name_dec x a then true else false) 0 <> None.
   Proof.
-    intro Hx. assert (count_occ Hdec l x > 0).
-    apply count_occ_In. exact Hx.
-    inversion H; eexists; auto.
+    destruct (aux_j_var_findpos' _ _ Ha 0). destruct H. rewrite H0. intro Hfalse. discriminate Hfalse.
   Qed.
 
-  Lemma incl_rmone {A} Hdec (l1 l2 : list A) x : 
-    NoDup l1 -> incl l1 (x :: l2) -> incl (rmone A Hdec x l1) l2.
+  Definition Fin_findpos a s (Ha : j_var a s) : Fin.t (length s).
+    refine (@Fin.of_nat_lt (unopt (findpos s (fun x => if Db.Name_dec x a then true else false) 0) _) _ _).
+    Unshelve. Focus 2. apply j_var_findpos'. exact Ha.
+    destruct (aux_j_var_findpos' _ _ Ha 0). destruct H.
+    generalize (j_var_findpos' a s Ha). rewrite H0. intros. simpl. exact H.
+  Defined.
+
+  Lemma findpos_m_Some_step A (s : list A) p :
+      forall m n, findpos s p m = Some n -> findpos s p (S m) = Some (S n).
   Proof.
-    intros H H1. intro. intro H2. pose (H2' := in_rmone _ _ _ _ _ H2). clearbody H2'.
-    pose (H1' := H1 _ H2'). clearbody H1'. assert (a <> x).
-    + intro. subst. generalize H H2. elim l1.
-      - simpl; intuition.
-      - intros a l IH Hnodup. simpl. destruct (Hdec a x).
-        * subst. intro. inversion Hnodup. contradiction H5.
-        * intro. destruct H0. contradiction n. apply IH. inversion Hnodup; auto. exact H0.
-    + destruct H1'; auto. subst. contradiction H0. reflexivity.
+    elim s.
+    + simpl. intros. discriminate H.
+    + simpl. intros. destruct (p a).
+      - injection H0. intuition.
+      - apply H. exact H0.
   Qed.
 
-  Lemma map_filter_tech {A} {B} {Hdec} {Hdec'} (f : A -> B) p x y l : 
-    p x = true -> y = f x -> List.In x l ->
-    count_occ Hdec (List.map f (filter p (rmone _ Hdec' x l))) y 
-    = count_occ Hdec (rmone _ Hdec y (List.map f (filter p l))) y.
+  Lemma findpos_m_Some A (s : list A) p m :
+      forall n, findpos s p 0 = Some n -> findpos s p m = Some (m + n).
   Proof.
-    intros H H0. elim l; auto.
-    intros a l' IH Hl. simpl. destruct (Hdec' a x).
-    + rewrite e. rewrite H. simpl. destruct (Hdec (f x) y).
-      - reflexivity.
-      - contradiction n. symmetry. exact H0.
-    + simpl. assert (List.In x l'). inversion Hl. contradiction n. exact H1. 
-      destruct (p a) eqn:Hp; simpl.
-      - destruct (Hdec (f a) y).
-        * rewrite IH; auto. symmetry. 
-          assert (List.In y (List.map f (filter p l'))).
-          rewrite H0. apply in_map. apply filter_In; split; auto.
-          destruct (count_occ_In_Sn Hdec _ _ H2).
-          eapply count_occ_rmone_r. exact H3.
-        * rewrite IH; auto. simpl. destruct (Hdec (f a) y). contradiction n0. reflexivity.
-      - apply IH. inversion Hl; auto.
+    elim m.
+    + simpl. intuition.
+    + simpl. intros. apply findpos_m_Some_step. apply H. exact H0.
   Qed.
 
-  Lemma count_occ_map_filter_rmone_tech {A} {B} {Hdec} {Hdec'} (f : A -> B) p x y l:
-    f x <> y ->
-    count_occ Hdec (List.map f (filter p (rmone _ Hdec' x l))) y
-    = count_occ Hdec (List.map f (filter p l)) y.
+  Lemma findpos_tech a s : forall s1 s2, s = s1 ++ a :: s2 -> ~ List.In a s1 ->
+    forall m, findpos s (fun x => if Db.Name_dec x a then true else false) m = Some (m + length s1).
   Proof.
-    intros. elim l; auto.
-    intros a l' IH. simpl. destruct (Hdec' a x).
-    + rewrite e. destruct (p x); simpl.
-      - destruct (Hdec (f x) y); simpl.
-        * contradiction H.
-        * reflexivity.
-      - reflexivity.
-    + simpl. destruct (p a); simpl.
-      - destruct (Hdec (f a) y); simpl.
-        * f_equal. apply IH.
-        * apply IH.
-      - apply IH.
+    intros s1 s2 Hs. rewrite Hs. elim s1; simpl; intros.
+    + destruct (Db.Name_dec a a). f_equal. omega. contradiction n. reflexivity.
+    + destruct (Db.Name_dec a0 a). contradiction H0. left. exact e.
+      rewrite H. f_equal. omega. intro. contradiction H0. right. exact H1.
   Qed.
 
-  Lemma filter_rmone_false {A} {Hdec} p (x : A) l : p x = false -> filter p (rmone _ Hdec x l) = filter p l.
+  Lemma j_var_notin s1 s2 a : j_var a (s1 ++ a :: s2) -> ~ List.In a s1.
   Proof.
-    intro. elim l; auto.
-    intros a l' IH. simpl. destruct (Hdec a x); simpl.
-    + rewrite e. rewrite H. reflexivity.
-    + destruct (p a).
-      - rewrite IH. reflexivity.
-      - exact IH.
+    elim s1; simpl; intros; intuition.
+    + inversion H0. contradiction H3. apply in_or_app. right. left. reflexivity.
+      contradiction H4. symmetry. exact H2.
+    + inversion H0. contradiction H3. apply in_or_app. right. left. reflexivity.
+      apply H; assumption.
   Qed.
 
-  Lemma card_sum_tech {m} {n} (R : Rel.R m) (f : Rel.T m -> Rel.T n) l1 : 
-    NoDup l1 -> forall l2, incl l2 (Rel.supp R) -> NoDup l2 -> 
-    (forall t u, List.In t l1 -> List.In u (Rel.supp R) -> f u = t -> List.In u l2) ->
-    (forall u, List.In u l2 -> List.In (f u) l1) ->
-    list_sum (List.map (Rel.memb (Rel.sum R f)) l1) = list_sum (List.map (Rel.memb R) l2).
+  Lemma Fin_findpos_tech a s Ha : forall s1 s2, s = s1 ++ a :: s2 -> 
+    proj1_sig (Fin.to_nat (Fin_findpos a s Ha)) = length s1.
   Proof.
-    elim l1.
-    + intros. replace l2 with (@List.nil (Rel.T m)). reflexivity.
-      destruct l2; auto. contradiction (H3 t). left. reflexivity.
-    + intros t l1' IH Hl1' l2 Hsupp Hl2 H1 H2. simpl.
-      replace (list_sum (List.map (Rel.memb R) l2)) with
-        (list_sum (List.map (Rel.memb R) (filter (fun x => Rel.T_eqb (f x) t) l2)) +
-         list_sum (List.map (Rel.memb R) (filter (fun x => negb (Rel.T_eqb (f x) t)) l2))).
-      - f_equal.
-        * rewrite Rel.p_sum. apply (list_sum_ext Nat.eq_dec).
-          generalize (Rel.p_nodup _ R) l2 Hsupp Hl2 H1; clear l2 Hsupp Hl2 H1 H2; elim (Rel.supp R).
-          ++ simpl. intros _ l2 Hincl. replace l2 with (@List.nil (Rel.T m)). reflexivity.
-             destruct l2; auto. contradiction (Hincl t0). left. reflexivity.
-          ++ intros x l3' IHin Hnodup l2 Hincl Hl2 H1 y. simpl. destruct (Rel.T_eqb (f x) t) eqn:Heq; simpl.
-            -- destruct (Nat.eq_dec (Rel.memb R x) y); simpl.
-              ** assert (exists n, count_occ Nat.eq_dec 
-                    (List.map (Rel.memb R) (filter (fun x0 : Rel.T m => Rel.T_eqb (f x0) t) l2)) y = S n).
-                  apply count_occ_In_Sn. rewrite <- e. apply in_map. apply filter_In. split; auto.
-                  eapply H1. left. reflexivity. left. reflexivity. apply Rel.T_eqb_eq. exact Heq.
-                destruct H. rewrite (count_occ_rmone_r _ _ _ _ _ H). f_equal.
-                transitivity (count_occ Nat.eq_dec (List.map (Rel.memb R) 
-                  (filter (fun x1 => Rel.T_eqb (f x1) t) (rmone _ (Rel.T_dec _) x l2))) y).
-                +++ apply IHin.
-                  --- inversion Hnodup. exact H4.
-                  --- eapply incl_rmone; assumption.
-                  --- apply nodup_rmone. exact Hl2.
-                  --- intros. apply in_rmone_neq. 
-                    *** inversion Hnodup. intro. rewrite H8 in H6. contradiction H6.
-                    *** eapply H1. exact H0. right. exact H2. exact H3.
-                +++ apply map_filter_tech. exact Heq. rewrite e. reflexivity. 
-                    eapply H1. left. reflexivity. left. reflexivity. apply Rel.T_eqb_eq. exact Heq.
-              ** replace (count_occ Nat.eq_dec (List.map (Rel.memb R) (filter (fun x0 => Rel.T_eqb (f x0) t) l2)) y)
-                  with (count_occ Nat.eq_dec (List.map (Rel.memb R) (filter (fun x0 => Rel.T_eqb (f x0) t) (rmone _ (Rel.T_dec _) x l2))) y).
-                apply IHin.
-                +++ inversion Hnodup. exact H3.
-                +++ eapply incl_rmone; assumption.
-                +++ apply nodup_rmone. exact Hl2. 
-                +++ intros. apply in_rmone_neq. 
-                  --- inversion Hnodup. intro. rewrite H7 in H5. contradiction H5.
-                  --- eapply H1. exact H. right. exact H0. exact H2.
-                +++ apply count_occ_map_filter_rmone_tech. exact n0.
-            -- replace (count_occ Nat.eq_dec (List.map (Rel.memb R) (filter (fun x0 => Rel.T_eqb (f x0) t) l2)) y)
-                  with (count_occ Nat.eq_dec (List.map (Rel.memb R) (filter (fun x0 => Rel.T_eqb (f x0) t) (rmone _ (Rel.T_dec _) x l2))) y). apply IHin.
-              *** inversion Hnodup. exact H3.
-              *** eapply incl_rmone; assumption.
-              *** apply nodup_rmone. exact Hl2. 
-              *** intros. apply in_rmone_neq. 
-                +++ inversion Hnodup. intro. rewrite H7 in H5. contradiction H5.
-                +++ eapply H1. exact H. right. exact H0. exact H2.
-              *** rewrite filter_rmone_false. reflexivity. exact Heq.
-        * apply IH.
-          ++ inversion Hl1'; assumption.
-          ++ intro x. intro Hx. apply Hsupp. 
-             destruct (proj1 (filter_In (fun x => negb (Rel.T_eqb (f x) t)) x l2) Hx). exact H.
-          ++ apply NoDup_filter. exact Hl2.
-          ++ intros. apply filter_In. split.
-            -- eapply H1. right. exact H. exact H0. exact H3.
-            -- apply Bool.negb_true_iff. destruct (Rel.T_dec _ (f u) t).
-              ** inversion Hl1'. rewrite <- e in H6. rewrite H3 in H6. contradiction H6.
-              ** destruct (Rel.T_eqb (f u) t) eqn:ed; auto. contradiction n0. apply Rel.T_eqb_eq. exact ed.
-          ++ intros. assert (List.In u l2 /\ negb (Rel.T_eqb (f u) t) = true).
-            -- apply (proj1 (filter_In (fun x => negb (Rel.T_eqb (f x) t)) u l2) H).
-            -- destruct H0. assert (f u <> t). intro. 
-              pose (H4' := proj2 (Rel.T_eqb_eq _ (f u) t) H4); clearbody H4'.
-              rewrite H4' in H3. discriminate H3. 
-              pose (H2' := H2 _ H0); clearbody H2'. inversion H2'; auto. contradiction H4. symmetry. exact H5.
-      - elim l2; auto.
-        intros x l2' IHin. simpl. destruct (Rel.T_eqb (f x) t); simpl.
-        * rewrite <- IHin. omega.
-        * rewrite <- IHin. omega.
+    intros. enough (exists H1 H2, Fin_findpos a s Ha = @Fin.of_nat_lt (unopt (findpos s (fun x => if Db.Name_dec x a then true else false) 0) H1) _ H2).
+    erewrite findpos_tech in H0. Focus 2. exact H.
+    decompose record H0. rewrite H2.
+    rewrite Fin.to_nat_of_nat. simpl. reflexivity.
+    clear H0. rewrite H in Ha. apply (j_var_notin _ _ _ Ha).
+    eexists. eexists. reflexivity.
   Qed.
-
-  Lemma card_sum : forall m n (f : Rel.T m -> Rel.T n) S, Rel.card (Rel.sum S f) = Rel.card S.
-  Proof.
-    intros. unfold Rel.card. do 2 rewrite Rel.p_sum.
-    rewrite filter_true. rewrite filter_true.
-    + apply card_sum_tech.
-      - apply Rel.p_nodup.
-      - apply incl_refl.
-      - apply Rel.p_nodup.
-      - intros. exact H0.
-      - intros. assert (Rel.memb (Rel.sum S f) (f u) > 0). 
-        * rewrite Rel.p_sum. rewrite (count_occ_list_sum Nat.eq_dec (Rel.memb S u)).
-          ++ apply lt_plus_trans. apply Rel.p_fs_r. exact H.
-          ++ apply count_occ_In. apply in_map. apply filter_In; split; auto.
-            apply Rel.T_eqb_eq. reflexivity.
-        * apply Rel.p_fs. exact H0.
-    + intros. apply Rel.T_eqb_eq. reflexivity.
-    + intros. apply Rel.T_eqb_eq. reflexivity.
-  Qed.
-
-  Lemma eq_sel m n (e : m = n) : forall (S1 : Rel.R m) (S2 : Rel.R n) p q,
-    (forall r1 r2, r1 ~= r2 -> Rel.memb S1 r1 = Rel.memb S2 r2) ->
-    (forall r1 r2, r1 ~= r2 -> p r1 = q r2) -> 
-    Rel.sel S1 p ~= Rel.sel S2 q.
-  Proof.
-    rewrite e. intros.
-    apply eq_JMeq. f_equal.
-    + apply Rel.p_ext. intro. apply H. reflexivity.
-    + extensionality r. apply H0. reflexivity.
-  Qed.
-
-  Lemma eq_card_dep m n (e : m = n) : forall (S1 : Rel.R m) (S2 : Rel.R n),
-    S1 ~= S2 -> Rel.card S1 = Rel.card S2.
-  Proof.
-    rewrite e. intros. rewrite H. reflexivity.
-  Qed.
-
-  Lemma JMeq_eq_rect_r A T (a1 a2: A) (e : a1 = a2) (p : A -> Type) :
-    forall (x : p a2) (y : T), x ~= y -> eq_rect_r p x e ~= y.
-  Proof.
-    rewrite e. intros. rewrite eq_rect_r_eq_refl. exact H.
-  Qed.
-
-  Lemma fun_ext_dep A B C (e : A = B) : 
-    forall (f : A -> C) (g : B -> C), (forall (x : A) (y : B), x ~= y -> f x = g y) -> f ~= g.
-  Proof.
-    rewrite e. intros.
-    apply eq_JMeq. extensionality z.
-    apply H. reflexivity.
-  Qed.
-
-  Lemma eq_cast_fun A B C (e : B = A) :
-    forall (ef : (A -> C) = (B -> C)) (f : A -> C) (x : B), cast _ _ ef f x = f (cast _ _ e x).
-  Proof.
-    rewrite e. intro. rewrite (UIP_refl _ _ ef). intros.
-    unfold cast. reflexivity.
-  Qed.
-
-Lemma pred_impl_fs_sel n S p q :
-  (forall (t : Rel.T n), p t = true -> q t = true) ->
-  forall x, Rel.memb (Rel.sel S p) x <= Rel.memb (Rel.sel S q) x.
-Proof.
-  intros Hpq x. destruct (p x) eqn:ep.
-  + rewrite (Rel.p_selt _ _ _ _ ep). rewrite (Rel.p_selt _ _ _ _ (Hpq _ ep)). reflexivity.
-  + rewrite (Rel.p_self _ _ _ _ ep). intuition.
-Qed.
-
-Lemma le_list_sum_memb_tech A (Hdec : forall x y : A, { x = y } + { x <> y }) f g (l1 : list A) (Hfg : forall x, f x <= g x) : 
-  forall l2, NoDup l1 -> NoDup l2 -> (forall x, List.In x l1 -> 0 < f x -> List.In x l2) ->
-  list_sum (List.map f l1) <= list_sum (List.map g l2).
-elim l1; intuition.
-simpl. destruct (f a) eqn:Hfa.
-+ apply H; auto; intros.
-  - inversion H0; auto.
-  - apply H2; auto. right. exact H3.
-+ replace (list_sum (List.map g l2)) with (g a + list_sum (List.map g (rmone A Hdec a l2))).
-  - rewrite <- Hfa. apply plus_le_compat; auto. apply H.
-    * inversion H0; auto.
-    * apply nodup_rmone. exact H1.
-    * intros y Hy Hfy. cut (a <> y).
-      ++ intro Hay. apply in_rmone_neq. 
-         -- exact Hay.
-         -- apply H2; intuition.
-      ++ inversion H0; auto. intro. contradiction H5. rewrite H7. exact Hy.
-  - cut (List.In a l2).
-    * intro Hcut. rewrite (count_occ_list_sum Nat.eq_dec (g a) (List.map g l2)).
-      ++ f_equal. generalize Hcut; clear Hcut. elim l2; intuition.
-         destruct Hcut; simpl.
-         -- rewrite H4. destruct (Nat.eq_dec (g a) (g a)); intuition. destruct (Hdec a a); intuition.
-         -- destruct (Hdec a0 a); intuition.
-            ** rewrite e. destruct (Nat.eq_dec (g a) (g a)); intuition.
-            ** destruct (Nat.eq_dec (g a0) (g a)); intuition.
-               +++ simpl. rewrite e. symmetry. cut (exists n, count_occ Hdec l0 a = S n).
-                   intro Hcut; decompose record Hcut. apply (list_sum_map_rmone _ _ _ _ _ _ H3).
-                   destruct (count_occ_In Hdec l0 a).
-                   pose (H3 H4). inversion g0; eexists; reflexivity.
-               +++ simpl. f_equal. apply H5.
-      ++ generalize Hcut; clear Hcut. elim l2; simpl.
-         -- intro. contradiction Hcut.
-         -- intros. destruct Hcut.
-            ** rewrite H4. destruct (Nat.eq_dec (g a) (g a)); intuition.
-            ** pose (H3 H4). destruct (Nat.eq_dec (g a0) (g a)); omega.
-    * apply H2. left. reflexivity. omega.
-Qed.
-
-Lemma le_list_sum_memb A Hdec f g (l1 l2 : list A) (Hfg : forall x, f x <= g x) : 
-  (forall x, count_occ Hdec l1 x <= count_occ Hdec l2 x) ->
-  list_sum (List.map f l1) <= list_sum (List.map g l2).
-intro Hcount. generalize l2 Hcount. clear l2 Hcount. elim l1; intuition.
-simpl. cut (exists n, count_occ Hdec l2 a = S n).
-+ intro Hcut. decompose record Hcut. clear Hcut.
-  replace (list_sum (List.map g l2)) with (g a + list_sum (List.map g (rmone A Hdec a l2))).
-  - apply plus_le_compat; auto. apply H. 
-    intro y. destruct (Hdec a y).
-    * rewrite e in H0. rewrite e. rewrite (count_occ_rmone _ _ _ _ _ H0). 
-      rewrite H0. transitivity x. pose (Hy := Hcount y). clearbody Hy.
-      rewrite H0 in Hy. simpl in Hy. destruct (Hdec a y); intuition.
-      omega.
-    * replace (count_occ Hdec (rmone A Hdec a l2) y) with (count_occ Hdec l2 y).
-      ++ transitivity (count_occ Hdec (a :: l) y).
-         -- apply le_count_occ_cons.
-         -- apply Hcount.
-      ++ apply count_occ_not_in. auto.
-  - rewrite (list_sum_map_rmone _ _ _ _ _ _ H0). reflexivity.
-+ pose (Ha := Hcount a); clearbody Ha; simpl in Ha. destruct (Hdec a a); intuition.
-  inversion Ha; eexists; reflexivity.
-Qed.
-
-Lemma le_list_sum_memb_f A Hdec f (l1 l2 : list A) : 
-  (forall x, count_occ Hdec l1 x <= count_occ Hdec l2 x) ->
-  list_sum (List.map f l1) <= list_sum (List.map f l2).
-Proof.
-  apply le_list_sum_memb. auto.
-Qed.
-
-Lemma le_list_sum_map_f_g A f g (l : list A) : 
-  (forall x, f x <= g x) ->
-  list_sum (List.map f l) <= list_sum (List.map g l).
-Proof.
-  intro Hfg. elim l; intuition.
-  simpl. apply plus_le_compat;auto.
-Qed.
-
-Lemma p_eq_not_neq n vl wl :
-  (fun ul => fold_right2 (fun u0 v0 acc => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl) wl = true
-  ->
-  (fun ul => fold_right2 (fun u0 v0 acc => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul vl) wl = true.
-Proof.
-  simpl.
-  eapply (Vector.rect2 (fun n0 vl0 wl0 => 
-    fold_right2 (fun (u0 v0 : option BaseConst) (acc : bool) => 
-      (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n0 wl0 vl0 = true ->
-    fold_right2 (fun (u0 v0 : option BaseConst) (acc : bool) => 
-      (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n0 wl0 vl0 = true) _ _ vl wl). Unshelve.
-  + simpl. auto.
-  + simpl. intros m vl0 wl0 IH v w. destruct (S3.veq w v); simpl.
-    - destruct (fold_right2 (fun (u0 v0 : option BaseConst) (acc : bool) => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true m
-       wl0 vl0) eqn:e; simpl.
-      * intros _. rewrite IH; auto.
-      * intro Hfalse; intuition.
-    - destruct (fold_right2 (fun (u0 v0 : option BaseConst) (acc : bool) => acc && S3.is_btrue (S3.veq u0 v0))%bool true m wl0 vl0);
-      simpl; intro Hfalse; intuition.
-    - destruct (fold_right2 (fun (u0 v0 : option BaseConst) (acc : bool) => acc && S3.is_btrue (S3.veq u0 v0))%bool true m wl0 vl0);
-      simpl; intro Hfalse; intuition.
-Qed.
-
-Lemma p_eq_not_neq_r n vl wl :
-  (fun ul => fold_right2 (fun u0 v0 acc => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul vl) wl = false
-  ->
-  (fun ul => fold_right2 (fun u0 v0 acc => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl) wl = false.
-Proof.
-  intros. destruct ((fun ul : t (option BaseConst) n => fold_right2 
-    (fun (u0 v0 : option BaseConst) (acc : bool) => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl) 
-    wl) eqn:e; auto.
-  simpl in H. rewrite (p_eq_not_neq _ _ _ e) in H. discriminate H.
-Qed.
-
-Lemma le_memb_eq_not_neq n S vl wl:
-       Rel.memb (Rel.sel S (fun ul : Rel.T n => fold_right2
-           (fun (u0 v0 : Value) (acc : bool) => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl)) wl
-       <= Rel.memb (Rel.sel S (fun ul : Rel.T n => fold_right2
-             (fun (u0 v0 : Value) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul vl)) wl.
-Proof.
-  pose (p := fun ul => fold_right2 (fun u0 v0 acc => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl).
-  pose (q := fun ul => fold_right2 (fun u0 v0 acc => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul vl).
-  destruct (p wl) eqn:ep.
-  - cut (q wl = true).
-    * intro eq. rewrite (Rel.p_selt _ _ _ _ ep). rewrite (Rel.p_selt _ _ _ _ eq). reflexivity.
-    * generalize ep; clear ep. simpl. apply p_eq_not_neq.
-  - rewrite (Rel.p_self _ _ _ _ ep). destruct (q wl) eqn:eq.
-    * rewrite (Rel.p_selt _ _ _ _ eq). intuition.
-    * rewrite (Rel.p_self _ _ _ _ eq). reflexivity.
-Qed.
-
-Lemma le_1_or : forall x, x <= 1 -> x = 0 \/ x = 1.
-Proof.
-  intros. inversion H. auto. inversion H1. auto.
-Qed.
-
-(*
-Lemma impl_count_occ n Hdec (S : Rel.R n) p q ul :
-  (forall vl, p vl = true -> q vl = true) ->
-  count_occ Hdec (Rel.supp (Rel.sel S p)) ul <= count_occ Hdec (Rel.supp (Rel.sel S q)) ul.
-Proof.
-  intro.
-*)
-
-Lemma le_card_eq_not_neq n S vl:
-       Rel.card (Rel.sel S (fun ul : Rel.T n => fold_right2
-           (fun (u0 v0 : Value) (acc : bool) => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul vl))
-       <= Rel.card (Rel.sel S (fun ul : Rel.T n => fold_right2
-             (fun (u0 v0 : Value) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul vl)).
-Proof.
-  unfold Rel.card. do 2 rewrite Rel.p_sum.
-  rewrite filter_true; auto. rewrite filter_true; auto.
-  * pose (p := fun ul0 => fold_right2 (fun u0 v0 acc => (acc && S3.is_btrue (S3.veq u0 v0))%bool) true n ul0 vl).
-    pose (q := fun ul0 => fold_right2 (fun u0 v0 acc => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n ul0 vl).
-    pose (Hp := Rel.p_nodup _ (Rel.sel S p)); clearbody Hp.
-    pose (Hq := Rel.p_nodup _ (Rel.sel S q)); clearbody Hq.
-    apply (le_list_sum_memb_tech _ (Rel.T_dec n)).
-    + apply le_memb_eq_not_neq.
-    + apply Rel.p_nodup.
-    + apply Rel.p_nodup.
-    + intros ul Hin Hmemb.
-      pose (Hnodup := NoDup_count_occ (Rel.T_dec n) (Rel.supp (Rel.sel S p))); clearbody Hnodup.
-      destruct Hnodup. clear H0.
-      apply Rel.p_fs. unfold gt. unfold lt.
-      transitivity (Rel.memb (Rel.sel S p) ul).
-      - exact Hmemb.
-      - apply le_memb_eq_not_neq.
-  * intros. apply Rel.T_eqb_eq. reflexivity.
-  * intros. apply Rel.T_eqb_eq. reflexivity.
-Qed.
-
-Lemma fold_right_not_neq_iff n (ul vl : Rel.T n) :
-  fold_right2 (fun (u0 v0 : Value) (acc : bool) => (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool)
-      true n ul vl = true
-  <-> forall (i : Fin.t n), S3.is_bfalse (S3.veq (nth ul i) (nth vl i)) = false.
-Proof.
-  eapply (rect2 (fun n0 ul0 vl0 => 
-          fold_right2 (fun (u0 v0 : Value) (acc : bool) => 
-            (acc && negb (S3.is_bfalse (S3.veq u0 v0)))%bool) true n0 ul0 vl0 = true 
-          <-> (forall (i0 : Fin.t n0), S3.is_bfalse (S3.veq (nth ul0 i0) (nth vl0 i0)) = false))
-        _ _ ul vl). Unshelve.
-  + simpl. split; auto. intros _ i. inversion i.
-  + intros m ul0 vl0 IH u0 v0. split.
-    - intros H i. 
-      cut (forall ul1 vl1, 
-        ul1 ~= cons Value u0 m ul0 -> vl1 ~= cons Value v0 m vl0 -> 
-        S3.is_bfalse (S3.veq (nth ul1 i) (nth vl1 i)) = false).
-      * intro Hcut. apply Hcut; reflexivity.
-      * dependent inversion i with (fun p (i0 : Fin.t p) => forall ul1 vl1, 
-        ul1 ~= cons Value u0 m ul0 -> vl1 ~= cons Value v0 m vl0 -> 
-        S3.is_bfalse (S3.veq (nth ul1 i0) (nth vl1 i0)) = false).
-        ++ intros. rewrite H0, H2. simpl in H. simpl. destruct (S3.veq u0 v0);auto.
-           symmetry in H. destruct (Bool.andb_true_eq _ _ H).
-           unfold S3.is_bfalse in H4. discriminate H4.
-        ++ intros. rewrite H0, H2. simpl.
-           apply IH. simpl in H. symmetry in H. destruct (Bool.andb_true_eq _ _ H).
-           rewrite <- H3. reflexivity.
-    - intro H. simpl. apply Bool.andb_true_iff. split.
-      * apply IH. intro i. apply (H (Fin.FS i)).
-      * apply Bool.negb_true_iff. apply (H Fin.F1).
-Qed.
-
-Lemma list_rect2 {A} {B} {P : list A -> list B -> Type} :
-       P Datatypes.nil Datatypes.nil -> 
-       (forall a1 a2 l1 l2, length l1 = length l2 -> P l1 l2 -> P (a1 :: l1) (a2 :: l2)) -> 
-       forall l1 l2, length l1 = length l2 -> P l1 l2.
-Proof.
-  intros Hbase Hind l1. elim l1.
-  + intro; destruct l2; intuition. simpl in H. discriminate H.
-  + intros a l1' IH l2. destruct l2; intuition. simpl in H. discriminate H.
-Qed.
-
-Lemma Vector_cons_equal {A} {m} {n} a1 a2 (v1 : Vector.t A m) (v2 : Vector.t A n) :
-  m ~= n -> a1 ~= a2 -> v1 ~= v2 -> cons A a1 m v1 ~= cons A a2 n v2.
-Proof.
-  intro. generalize v1; clear v1. rewrite H. intros. rewrite H0, H1. reflexivity.
-Qed.
-
-Lemma of_list_equal {A} (l1 l2 : list A) :
-  l1 = l2 -> of_list l1 ~= of_list l2.
-Proof.
-  intro. rewrite H. reflexivity.
-Qed.
-
-  Lemma S2_is_btrue_or_elim (b1 b2 : bool) (P : Prop) :
-    (S2.is_btrue b1 = true -> P) -> (S2.is_btrue b2 = true -> P) ->
-    S2.is_btrue (b1 || b2) = true -> P.
-  Proof.
-    Bool.destr_bool; auto.
-  Qed.
-
-  Definition projT1_eq {A} {P : A -> Type} {u v : { a : A & P a }} (p : u = v)
-    : projT1 u = projT1 v
-    := f_equal (@projT1 _ _) p.
-
-  Definition projT2_eq {A} {P : A -> Type} {u v : { a : A & P a }} (p : u = v)
-    : @eq_rect _ _ _ (projT2 u) _ (projT1_eq p) = projT2 v.
-  Proof.
-    rewrite p. reflexivity.
-  Qed.
-
-  Lemma f_JMeq : forall A (T : A -> Type) (f : forall a, T a) x y, x = y -> f x ~= f y.
-  Proof.
-    intros. rewrite H. reflexivity.
-  Qed.
-
-  Definition existT_projT2_eq {A} {P : A -> Type} a (p1 p2 :  P a) (e : existT _ _ p1 = existT _ _ p2)
-    : p1 = p2.
-  Proof.
-    transitivity (projT2 (existT P a p1)). reflexivity. 
-    transitivity (projT2 (existT P a p2)). apply JMeq_eq. eapply (f_JMeq _ _ (@projT2 A P) _ _ e).
-    reflexivity.
-  Qed.
-
-Lemma list_In_vec_In {A} (a : A) (l : list A) : List.In a l -> Vector.In a (Vector.of_list l).
-Proof.
-  elim l.
-  + intro H. contradiction H.
-  + intros a0 l0 IH H. destruct H.
-    - rewrite H. constructor.
-    - constructor. apply IH. exact H.
-Qed.
-
-Lemma aux_j_var_findpos' a s :
-  j_var a s -> 
-  forall m, exists n, n < m + length s /\ findpos s (fun x => if Db.Name_dec x a then true else false) m = Some n.
-Proof.
-  intro H. elim H; simpl.
-  + intros. exists m. destruct (Db.Name_dec a a); intuition.
-  + intros. destruct (Db.Name_dec b a); intuition.
-    - rewrite e in H0. contradiction H0. reflexivity.
-    - destruct (H2 (S m)). destruct H3.
-      exists x. split; auto; omega.
-Qed.
-
-Lemma j_var_findpos' a s (Ha : j_var a s) : findpos s (fun x => if Db.Name_dec x a then true else false) 0 <> None.
-Proof.
-  destruct (aux_j_var_findpos' _ _ Ha 0). destruct H. rewrite H0. intro Hfalse. discriminate Hfalse.
-Qed.
-
-Definition Fin_findpos a s (Ha : j_var a s) : Fin.t (length s).
-  refine (@Fin.of_nat_lt (unopt (findpos s (fun x => if Db.Name_dec x a then true else false) 0) _) _ _).
-  Unshelve. Focus 2. apply j_var_findpos'. exact Ha.
-  destruct (aux_j_var_findpos' _ _ Ha 0). destruct H.
-  generalize (j_var_findpos' a s Ha). rewrite H0. intros. simpl. exact H.
-Defined.
-
-Lemma findpos_m_Some_step A (s : list A) p :
-    forall m n, findpos s p m = Some n -> findpos s p (S m) = Some (S n).
-Proof.
-  elim s.
-  + simpl. intros. discriminate H.
-  + simpl. intros. destruct (p a).
-    - injection H0. intuition.
-    - apply H. exact H0.
-Qed.
-
-Lemma findpos_m_Some A (s : list A) p m :
-    forall n, findpos s p 0 = Some n -> findpos s p m = Some (m + n).
-Proof.
-  elim m.
-  + simpl. intuition.
-  + simpl. intros. apply findpos_m_Some_step. apply H. exact H0.
-Qed.
-
-Lemma findpos_tech a s : forall s1 s2, s = s1 ++ a :: s2 -> ~ List.In a s1 ->
-  forall m, findpos s (fun x => if Db.Name_dec x a then true else false) m = Some (m + length s1).
-Proof.
-  intros s1 s2 Hs. rewrite Hs. elim s1; simpl; intros.
-  + destruct (Db.Name_dec a a). f_equal. omega. contradiction n. reflexivity.
-  + destruct (Db.Name_dec a0 a). contradiction H0. left. exact e.
-    rewrite H. f_equal. omega. intro. contradiction H0. right. exact H1.
-Qed.
-
-Lemma j_var_notin s1 s2 a : j_var a (s1 ++ a :: s2) -> ~ List.In a s1.
-Proof.
-  elim s1; simpl; intros; intuition.
-  + inversion H0. contradiction H3. apply in_or_app. right. left. reflexivity.
-    contradiction H4. symmetry. exact H2.
-  + inversion H0. contradiction H3. apply in_or_app. right. left. reflexivity.
-    apply H; assumption.
-Qed.
-
-Lemma Fin_findpos_tech a s Ha : forall s1 s2, s = s1 ++ a :: s2 -> 
-  proj1_sig (Fin.to_nat (Fin_findpos a s Ha)) = length s1.
-Proof.
-  intros. enough (exists H1 H2, Fin_findpos a s Ha = @Fin.of_nat_lt (unopt (findpos s (fun x => if Db.Name_dec x a then true else false) 0) H1) _ H2).
-  erewrite findpos_tech in H0. Focus 2. exact H.
-  decompose record H0. rewrite H2.
-  rewrite Fin.to_nat_of_nat. simpl. reflexivity.
-  clear H0. rewrite H in Ha. apply (j_var_notin _ _ _ Ha).
-  eexists. eexists. reflexivity.
-Qed.
-
-Lemma bool_eq_P (P : Prop) b1 b2 : (b1 = true <-> P) -> (b2 = true <-> P) -> b1 = b2.
-Proof.
-  Bool.destr_bool.
-  + apply H. apply H0. reflexivity.
-  + symmetry. apply H0. apply H. reflexivity.
-Qed.
-
-Lemma not_veq_false v w : S3.is_bfalse (S3.veq v w) = false -> v = null \/ w = null \/ v = w.
-Proof.
-  destruct v; simpl.
-  + destruct w; simpl.
-    - destruct (c_eq b b0) eqn:eqc.
-      * intros _. right. right. f_equal. apply Db.BaseConst_eqb_eq. exact eqc.
-      * unfold S3.is_bfalse; simpl; intro Hfalse; discriminate Hfalse.
-    - intros _. right. left. reflexivity.
-  + intros _. left. reflexivity.
-Qed.
-
-Lemma cond_sem_cndeq_true1' d G t1 t2 St1 St2 h k :
-  Ev.j_tm_sem G t1 St1 -> Ev.j_tm_sem G t2 St2 ->
-  St1 h = Some k -> St2 h = Some k ->
-  exists Sc, SQLSem2.j_cond_sem d G (cndeq t1 t2) Sc /\ Sc h = true.
-Proof.
-  intros Ht1 Ht2 eSt1 eSt2. eexists. 
-  unfold cndeq. split.
-  + econstructor. econstructor. exact Ht1. econstructor. exact Ht2. econstructor.
-  + hnf. 
-    cut (forall p0 e0, p0 = (fun l (e : length l = 2) =>
-        c_eq (nth_lt l 0 (eq_rect_r (lt 0) (le_S 1 1 (le_n 1)) e))
-          (nth_lt l 1 (eq_rect_r (lt 1) (le_n 2) e))) ->
-        S2.sem_bpred 2 p0 (St1 h::St2 h::List.nil) e0 = true).
-    intro Hcut. apply Hcut. reflexivity.
-    intros. apply S2.sem_bpred_elim.
-    - intro. rewrite eSt1, eSt2. simpl. intro Hret. injection Hret. clear Hret. intros Hret.
-      rewrite <- Hret. simpl. intro Htriv.
-      rewrite (UIP_refl _ _ Htriv). rewrite H. repeat rewrite eq_rect_r_eq_refl. 
-      unfold S2.of_bool, nth_lt. simpl. apply Db.BaseConst_eqb_eq. reflexivity.
-    - simpl. rewrite eSt1, eSt2. simpl. intro Hfalse. discriminate Hfalse. 
-      Unshelve. reflexivity.
-Qed.
-
-Lemma to_list_eq {A} {m} (ul : Vector.t A m) {n} (vl : Vector.t A n) : m = n -> ul ~= vl -> to_list ul = to_list vl.
-Proof.
-  intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
-Qed.
-
-Lemma hd_eq {A} {m} (ul : Vector.t A (S m)) {n} (vl : Vector.t A (S n)) : m = n -> ul ~= vl -> hd ul = hd vl.
-Proof.
-  intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
-Qed.
-
-Lemma tl_eq {A} {m} (ul : Vector.t A (S m)) {n} (vl : Vector.t A (S n)) : m = n -> ul ~= vl -> tl ul ~= tl vl.
-Proof.
-  intro e. generalize ul; clear ul; rewrite e; intros ul e'. rewrite e'. reflexivity.
-Qed.
-
-
-Lemma split_n_0 {A} {n} : forall (ul1 : Vector.t A (n+0)) (ul2 : Vector.t A n), ul1 ~= ul2 -> split ul1 ~= (ul2, nil A).
-Proof.
-  elim n.
-  + simpl. intros. 
-    eapply (Vector.case0 (fun ul0 => (nil A, ul0) ~= (ul2, nil A))).
-    eapply (Vector.case0 (fun ul0 => (nil A, nil A) ~= (ul0, nil A))). reflexivity.
-  + clear n. intros n IH ul1 ul2. simpl. intro.
-    generalize (@JMeq_refl _ ul1).
-    eapply (Vector.caseS (fun n0 ul0 => ul1 ~= ul0 -> (let (v1,v2) := split (tl ul1) in (cons A (hd ul1) n v1, v2)) ~= (ul2, nil A))).
-    intros h n0. replace n0 with (n0 + 0).
-    - intro tl1. intro H1. cut (tl ul1 ~= tl ul2).
-      * intro Hcut. pose (IH' := IH _ _ Hcut); clearbody IH'.
-        pose (f := fun n (x : Vector.t A n * Vector.t A 0) => let (v1, v2) := x in (cons A (hd ul1) n v1, v2)).
-        cut (f _ (split (tl ul1)) ~= f _ (tl ul2, nil A)).
-        ++ unfold f. intro Hf. eapply (JMeq_trans Hf). apply eq_JMeq. f_equal.
-          replace ul2 with (cons A (hd ul2) n (tl ul2)).
-          -- f_equal. apply hd_eq. apply plus_0_r. exact H.
-          -- eapply (Vector.caseS (fun n0 ul0 => cons A (hd ul0) n0 (tl ul0) = ul0)). intuition.
-        ++ rewrite IH'. reflexivity.
-      * apply tl_eq. apply plus_0_r. exact H.
-    - apply plus_0_r.
-Qed.
-
-Lemma nth_error_Some_nth {A} {n} (ul : Vector.t A n) : forall k (Hk : k < n),
-  nth_error (to_list ul) k = Some (nth ul (Fin.of_nat_lt Hk)).
-Proof.
-  elim ul.
-  + intros k Hk. absurd (k < 0). omega. exact Hk.
-  + clear n ul. intros h n ul IH k. destruct k.
-    - simpl. intuition.
-    - intro Hk. transitivity (nth_error (to_list ul) k).
-      * reflexivity.
-      * cut (k < n).
-        ++ intro Hk'. rewrite (IH _ Hk'). f_equal.
-          replace (Fin.of_nat_lt Hk) with (Fin.FS (Fin.of_nat_lt Hk')).
-          -- reflexivity.
-          -- transitivity (Fin.of_nat_lt (le_n_S _ _ Hk')).
-            ** simpl. f_equal. apply Fin.of_nat_ext.
-            ** apply Fin.of_nat_ext.
-        ++ omega.
-Qed.
 
   Lemma in_nodup_j_var a s : List.In a s -> List.NoDup s -> j_var a s.
   Proof.
@@ -1001,100 +232,6 @@ Qed.
   Proof.
     intro Hlen. rewrite <- (to_list_of_list_opp tml). rewrite <- (to_list_of_list_opp s).
     generalize (of_list tml) (of_list s). rewrite Hlen. intros vtml vs. apply tech_j_cond_fold_vect.
-  Qed.
-
-  Lemma if_true A b x y (P : A -> Prop) : b = true -> P x -> P (if b then x else y).
-  Proof.
-    intros. rewrite H. exact H0.
-  Qed.
-
-  Lemma if_false A b x y (P : A -> Prop) : b = false -> P y -> P (if b then x else y).
-  Proof.
-    intros. rewrite H. exact H0.
-  Qed.
-
-  Lemma if_elim A (b : bool) x y (P : A -> Prop) : P x -> P y -> P (if b then x else y).
-  Proof.
-    intros. destruct b; auto.
-  Qed.
-
-  Lemma eq_rect_dep : forall (A : Type) (x : A) (P : forall (a : A), x = a -> Type), P x eq_refl ->
-    forall y : A, forall e : x = y, P y e.
-  Proof.
-    intros. rewrite <- e. apply X.
-  Qed.
-
-  Lemma bool_contrapos b1 b2 : (b1 = true -> b2 = true) -> b2 = false -> b1 = false.
-  Proof.
-    Bool.destr_bool. discriminate (H eq_refl).
-  Qed.
-
-  Lemma cast_fun_app_JM A B A' B' B'' (ea : A = A') (eb : B = B') (eb' : B' = B'') :
-    forall (e : (A -> B) = (A' -> B')) (f : A -> B) (x : A') (y : B''), 
-    (forall x', x ~= x' -> f x' ~= y)
-    -> cast _ _ e f x ~= y.
-  Proof.
-    rewrite ea, eb, eb'. intro e. rewrite (UIP_refl _ _ e). intros. simpl.
-    apply H. reflexivity.
-  Qed.
-
-  Lemma JMeq_eq_rect A x (T : A -> Type) U t y e (u : U) : T y = U -> t ~= u -> eq_rect x T t y e ~= u.
-  Proof.
-    intros. generalize dependent t. rewrite e. simpl. intuition.
-  Qed.
-
-  Lemma f_JMequal {A : Type} {B : A -> Type} {A' : Type} {B' : A' -> Type} 
-    {ea : A = A'} {eb : B ~= B'} :
-    forall (f : forall a, B a) (g : forall a', B' a') x y, f ~= g -> x ~= y -> f x ~= g y.
-  Proof.
-    generalize dependent eb. generalize dependent B'.
-    rewrite <- ea. intros B' eb.
-    eapply (eq_rect B (fun (B0 : A -> Type) =>
-      forall (f : forall a : A, B a) (g : forall a' : A, B0 a') (x y : A), f ~= g -> x ~= y -> f x ~= g y) _ B' _).
-    Unshelve.
-    simpl. intros. rewrite H, H0. reflexivity.
-    apply JMeq_eq. exact eb.
-  Qed.
-
-  Lemma f_JMequal_pi {A : Prop} {B : A -> Type} {A' : Prop} {B' : A' -> Type} 
-    {ea : A = A'} {eb : B ~= B'} :
-    forall (f : forall a, B a) (g : forall a', B' a') x y, f ~= g -> f x ~= g y.
-  (** not a corollary of the previous lemma, because here A = A' is (@eq Prop A A') rather than (@eq Type A A') *)
-  Proof.
-    generalize dependent eb. generalize dependent B'.
-    rewrite <- ea. intros B' eb.
-    eapply (eq_rect B (fun (B0 : A -> Type) =>
-      forall (f : forall a : A, B a) (g : forall a' : A, B0 a') (x y : A), f ~= g -> f x ~= g y) _ B' _).
-    Unshelve.
-    simpl. intros. rewrite H. rewrite (proof_irrelevance _ x y). reflexivity.
-    apply JMeq_eq. exact eb.
-  Qed.
-
-  Lemma existT_eq_elim {A} {P : A -> Type} {a} {b} {p1} {p2} (e : existT P a p1 = existT P b p2) :
-    forall (Q:Prop), (a = b -> p1 ~= p2 -> Q) -> Q.
-  Proof.
-    intros. injection e. intros _ H1. generalize dependent p2. generalize dependent p1. 
-    rewrite H1. intros. apply H; auto. apply eq_JMeq. apply (existT_projT2_eq _ _ _ e).
-  Qed.
-
-  Lemma cast_JMeq S T U e x (y : U) : x ~= y -> cast S T e x ~= y.
-  Proof.
-    generalize dependent x. rewrite e. simpl. intuition.
-  Qed.
-
-  Lemma cast_elim {P:Prop} {A} (B : Type) (a : A) : A = B -> (forall (b:B), a ~= b -> P) -> P.
-  Proof.
-    intros; subst. apply (H0 _ JMeq_refl).
-  Qed.
-
-  Lemma S3_is_btrue_bneg : forall b, S3.is_btrue (S3.bneg b) = S3.is_bfalse b.
-  Proof.
-    intro. destr_tribool.
-  Qed.
-
-  Lemma S2_is_btrue_bneg : forall b, S2.is_btrue (S2.bneg b) = S2.is_bfalse b.
-  Proof.
-    intro. destruct b; auto.
   Qed.
 
   Lemma sem3_pred_ttrue' : forall n p vl e,
@@ -1247,6 +384,29 @@ Qed.
       - apply (H _ Ha). rewrite H0. omega.
       - simpl. f_equal. apply Fin.of_nat_ext.
     + omega.
+  Qed.
+
+  Lemma cond_sem_cndeq_true1' d G t1 t2 St1 St2 h k :
+    Ev.j_tm_sem G t1 St1 -> Ev.j_tm_sem G t2 St2 ->
+    St1 h = Some k -> St2 h = Some k ->
+    exists Sc, SQLSem2.j_cond_sem d G (cndeq t1 t2) Sc /\ Sc h = true.
+  Proof.
+    intros Ht1 Ht2 eSt1 eSt2. eexists. 
+    unfold cndeq. split.
+    + econstructor. econstructor. exact Ht1. econstructor. exact Ht2. econstructor.
+    + hnf. 
+      cut (forall p0 e0, p0 = (fun l (e : length l = 2) =>
+          c_eq (nth_lt l 0 (eq_rect_r (lt 0) (le_S 1 1 (le_n 1)) e))
+            (nth_lt l 1 (eq_rect_r (lt 1) (le_n 2) e))) ->
+          S2.sem_bpred 2 p0 (St1 h::St2 h::List.nil) e0 = true).
+      intro Hcut. apply Hcut. reflexivity.
+      intros. apply S2.sem_bpred_elim.
+      - intro. rewrite eSt1, eSt2. simpl. intro Hret. injection Hret. clear Hret. intros Hret.
+        rewrite <- Hret. simpl. intro Htriv.
+        rewrite (UIP_refl _ _ Htriv). rewrite H. repeat rewrite eq_rect_r_eq_refl. 
+        unfold S2.of_bool, nth_lt. simpl. apply Db.BaseConst_eqb_eq. reflexivity.
+      - simpl. rewrite eSt1, eSt2. simpl. intro Hfalse. discriminate Hfalse. 
+        Unshelve. reflexivity.
   Qed.
 
   Lemma cond_sem_cndeq_true2' d G t1 t2 Sc St1 St2 h :
@@ -1506,54 +666,6 @@ Qed.
     unfold is_subenv'. intros. destruct (Hsub a Ha k0 Hk H0). eexists. exact H1.
   Qed.
 
-  Theorem list_ind2 (A B : Type) (P : list A -> list B -> Type) :
-      P List.nil List.nil ->
-      (forall a al b bl, length al = length bl -> P al bl -> P (a::al) (b::bl)) ->
-      forall al bl, length al = length bl -> P al bl.
-  Proof.
-    intros Hnil Hcons al. induction al.
-    + intro. destruct bl; intuition. discriminate H.
-    + intro. destruct bl; intuition. discriminate H.
-  Qed.
-
-  Lemma not_veq_false' v w : 
-    S3.is_bfalse (S3.veq v w) = false <-> v = null \/ w = null \/ 
-      exists cv cw, v = Some cv /\ w = Some cw /\ Db.c_eq cv cw = true.
-  Proof.
-    destruct v; simpl.
-    + destruct w; simpl.
-      - destruct (c_eq b b0) eqn:eqc.
-        * split; intro.
-          ++ right. right. exists b; exists b0. split. reflexivity. split. reflexivity. exact eqc.
-          ++ reflexivity.
-        * split.
-          ++ unfold S3.is_bfalse; simpl; intro Hfalse; discriminate Hfalse.
-          ++ intro. destruct H. discriminate H. destruct H. discriminate H.
-             decompose record H. injection H0. injection H1. intros. subst. rewrite eqc in H3. discriminate H3.
-      - split.
-        * intros _. right. left. reflexivity.
-        * intro. reflexivity.
-    + split.
-      * intros _. left. reflexivity.
-      * intro. reflexivity.
-  Qed.
-
-  Lemma coimpl_trans {P Q R : Prop} (H1 : P <-> Q) (H2 : Q <-> R) : P <-> R.
-  Proof.
-    intuition.
-  Qed.
-
-  Lemma coimpl_sym {P Q : Prop} (H : P <-> Q) : Q <-> P.
-  Proof.
-    intuition.
-  Qed.
-
-  Lemma bool_orb_elim (b1 b2 : bool) (P : Prop) : 
-    (b1 = true -> P) -> (b2 = true -> P) -> (b1 || b2)%bool = true -> P.
-  Proof.
-    Bool.destr_bool; auto.
-  Qed.
-
   Lemma tech_sem_cndeq d g t1 t2 Sc St1 St2 : 
     SQLSem2.j_cond_sem d g (cndeq t1 t2) Sc ->
     Ev.j_tm_sem g t1 St1 ->
@@ -1665,54 +777,6 @@ Qed.
              transitivity (skipn (length (projT1 h0)) (projT1 h0 ++ projT1 h)).
              rewrite Ev.length_env. reflexivity.
              rewrite Ev.skipn_append. reflexivity.
-  Qed.
-
-  Lemma vector_append_cons {A m n} (v : Vector.t A m) (w : Vector.t A (S n)) : 
-    append v w ~= append (append v (cons A (hd w) _ (nil _))) (tl w).
-  Proof.
-    induction v; simpl.
-    + rewrite <- (Vector.eta w). reflexivity.
-    + eapply (f_JMequal (cons _ _ _) (cons _ _ _)). Unshelve.
-      - eapply (f_JMequal (cons _ _) (cons _ _)). Unshelve. reflexivity. apply eq_JMeq. omega. reflexivity. reflexivity.
-      - exact IHv.
-      - f_equal. omega.
-      - replace (n0 + 1 + n) with (n0 + S n). reflexivity. omega.
-  Qed.
-
-  Lemma unopt_elim {A} (x : option A) H (P : A -> Prop) : 
-    (forall y, x = Some y -> P y) ->
-    P (unopt x H).
-  Proof.
-    destruct x; intuition. contradiction H. reflexivity.
-  Qed.
-
-  Lemma cons_equal {A} : forall h1 h2 n1 n2 t1 t2,
-    h1 = h2 -> n1 = n2 -> t1 ~= t2 -> cons A h1 n1 t1 ~= cons A h2 n2 t2.
-  Proof.
-    intros. generalize t1 t2 H1; clear t1 t2 H1. rewrite H, H0.
-    intros. rewrite H1. reflexivity.
-  Qed.
-
-  Lemma split_ind {A} {m} {n} (v : Vector.t A (m + n)) :
-    forall (P : forall m n, (Vector.t A m * Vector.t A n) -> Prop),
-    (forall v1 v2, v = append v1 v2 -> P m n (v1,v2)) ->
-    P m n (split v).
-  Proof.
-    induction m; simpl; intuition.
-    rewrite (surjective_pairing (split (tl v))). apply H. apply JMeq_eq.
-    eapply (IHm (tl v) (fun m0 n0 v0 => v ~= append (cons A (hd v) _ (fst v0)) (snd v0))).
-    intros. simpl. rewrite (Vector.eta v). simpl. apply eq_JMeq. f_equal. exact H0.
-  Qed.
-
-  Lemma vector_append_nil_r {A} {n} (v : Vector.t A n): 
-    append v (Vector.nil _) ~= v.
-  Proof.
-    induction v; intuition.
-    simpl. eapply (f_JMequal (cons A h (n+0)) (cons A h n)). Unshelve.
-    + eapply (f_JMeq _ _ (cons A h)). omega.
-    + exact IHv.
-    + f_equal. omega.
-    + replace (n+0) with n. reflexivity. omega.
   Qed.
 
   Lemma j_var_sem_tech : forall a s1 s2 (x : Rel.T (S (length s2))) (y : Rel.T (length s1)) e,
