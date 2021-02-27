@@ -1,4 +1,6 @@
-Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq 
+(* if we do not remove the dependency on Syntax, we can't compile this until we fix syntax *)
+
+Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq Common Syntax
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Syntax AbstractRelation Util.
 
 Module Facts (Db : DB) (Sql : SQL Db).

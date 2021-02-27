@@ -40,8 +40,8 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
 
   Lemma length_concat_list_sum (A : Type) (l : list (list A)) : 
     List.length (List.concat l) = list_sum (List.map (@List.length A) l).
-  rewrite <- (map_id l) at 1. rewrite <- flat_map_concat_map.
-  rewrite flat_map_length. apply f_equal. apply map_ext. auto.
+  rewrite <- (List.map_id l) at 1. rewrite <- flat_map_concat_map.
+  rewrite flat_map_length. apply f_equal. apply List.map_ext. auto.
   Defined.
 
   Definition cast (A B : Type) (e : A = B) (a : A) : B.
@@ -325,6 +325,14 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     length al = length bl -> List.map fst (combine al bl) = al.
   Proof.
     intros. eapply (list_ind2 _ _ (fun al bl => List.map fst (combine al bl) = al) _ _ _ _ H). Unshelve.
+    + reflexivity.
+    + simpl; intros. rewrite H1. reflexivity.
+  Qed.
+
+  Lemma map_snd_combine A B (al : list A) (bl : list B) : 
+    length al = length bl -> List.map snd (combine al bl) = bl.
+  Proof.
+    intros. eapply (list_ind2 _ _ (fun al bl => List.map snd (combine al bl) = bl) _ _ _ _ H). Unshelve.
     + reflexivity.
     + simpl; intros. rewrite H1. reflexivity.
   Qed.

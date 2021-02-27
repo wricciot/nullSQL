@@ -1,16 +1,13 @@
-Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq 
-  FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Syntax Semantics Util Tribool.
+Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq Common
+  FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Syntax Eval Util Tribool.
 
-Module Facts (Db : DB) (Sql : SQL Db).
+Module Facts (Db : DB).
 
   Import Db.
-  Import Sql.
 
   Module S2 := Sem2 Db.
   Module S3 := Sem3 Db.
-  Module Ev := Evl Db Sql.
-  Module SQLSem2 := SQLSemantics Db S2 Sql Ev.
-  Module SQLSem3 := SQLSemantics Db S3 Sql Ev.
+  Module Ev := Evl Db.
 
   Lemma projT1_env_app G1 G2 h1 h2 : 
     projT1 (Ev.env_app G1 G2 h1 h2) = projT1 h1 ++ projT1 h2.

@@ -6,7 +6,7 @@ Module Translation2V (Db : DB) (Sql : SQL Db).
   Import Sql.
 
   Module RF := RelFacts.Facts Db Sql.
-  Module SF := SemFacts.Facts Db Sql.
+  Module SF := SemFacts.Facts Db.
   Import RF.
   Import SF.
 

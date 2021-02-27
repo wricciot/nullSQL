@@ -1,12 +1,14 @@
+(* Will have to be updated with changes to SQL semantics *)
+
 Require Import Eqdep Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool 
-  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance Util RelFacts SemFacts.
+  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance Util RelFacts SemFacts Common.
 
 Module RewriteRules (Db : DB) (Sql : SQL Db).
   Import Db.
   Import Sql.
 
   Module RF := RelFacts.Facts Db Sql.
-  Module SF := SemFacts.Facts Db Sql.
+  Module SF := SemFacts.Facts Db.
   Import RF.
   Import SF.
 
