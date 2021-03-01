@@ -66,8 +66,6 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
 
 *)
 
-  Axiom of_precond : precond -> pretm.
-
   Definition sql_empty q s := cndnot (cndex (selstar false (((tbquery q,s)::List.nil)::List.nil) cndtrue)).
 
 (*
@@ -324,6 +322,117 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     apply map_snd_combine. exact H2.
   Admitted.
 
+  Lemma tml_sem_tmlist_of_ctx_eq s G :
+    forall s0 Stml,
+      SQLSem.j_tml_sem ((s0++s)::G) (tmlist_of_ctx (s::List.nil)) Stml ->
+        Stml ~= fun h => Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((s0 ++ s)::List.nil) G h)).
+  Proof.
+    elim s.
+    + simpl. unfold tmlist_of_ctx. simpl. intros.
+      eapply (SQLSem.j_tml_nil_sem _ _ (fun _ _ => _) _ H). Unshelve.
+      simpl. intros _ Heq. eapply (existT_eq_elim Heq); clear Heq; intros _ Heq.
+      symmetry. eapply (JMeq_trans _ Heq). Unshelve.
+      apply funext_JMeq. reflexivity. reflexivity.
+      intros h1 h2 Hh; subst.
+      eapply (Vector.case0 (fun x => x ~= _)). reflexivity.
+    + simpl. unfold tmlist_of_ctx. simpl. intros.
+      eapply (SQLSem.j_tml_cons_sem _ _ _ _ (fun _ _ _ _ => _ ~= _) _ H0). Unshelve.
+      simpl; intros; subst. eapply (existT_eq_elim H6); clear H6; intros _ H6.
+      symmetry. eapply (JMeq_trans _ H6). Unshelve.
+      apply funext_JMeq. reflexivity. simpl. f_equal; f_equal. rewrite app_length. rewrite map_length. reflexivity.
+      intros h1 h2 Hh; subst.
+      inversion H2. subst.
+      enough (Evl.j_fvar_sem ((s0 ++ a :: l) :: G) 0 a St) as H7'.
+      generalize (Evl.j_fvar_sem_inside_eq _ _ _ _ _ H7'). intro Ht.
+      (* Ht is what we need for the hd *)
+      enough (exists Stml', SQLSem.j_tml_sem (((s0 ++ a :: List.nil) ++ l)::G) (List.map (fun x => tmvar (0,x)) l ++ List.nil) Stml' /\ Stml' ~= Stml0).
+      decompose record H3. rename x into Stml'; clear H3.
+      generalize (H _ _ H6). intro Html.
+      rewrite (Vector.eta (Evl.tuple_of_env _ (Evl.env_skip (@Evl.subenv1 ((s0++a::l)::List.nil) _ h2)))).
+      apply cons_equal.
+      - rewrite Ht. apply Evl.hd_tuple_of_env.
+      - rewrite app_length. rewrite map_length. reflexivity.
+      - rewrite (Evl.tl_tuple_of_env a l List.nil _).
+        enough (exists (h : Evl.env (((s0 ++ a :: List.nil) ++ l) :: G)), h ~= h2).
+        decompose record H3; clear H3; rename x into h.
+        apply (@JMeq_trans _ _ _ _ (Stml' h)).
+        apply (@JMeq_trans _ _ _ _ 
+          (Evl.tuple_of_env (l::List.nil) (Evl.env_skip (@Evl.subenv1 (((s0 ++ a :: List.nil)++l)::List.nil) _ h)))).
+        apply (f_JMeq _ _ (Evl.tuple_of_env (l::List.nil))). apply JMeq_eq.
+        rewrite <- Evl.env_skip_single. symmetry. apply Evl.env_skip_skip.
+        eapply (f_JMequal (@Evl.subenv1 (((s0++a::List.nil)++l)::List.nil) G) (@Evl.subenv1 ((s0++a::l)::List.nil) G)).
+        simpl. rewrite <- app_assoc. reflexivity. exact H5.
+        erewrite (f_JMequal _ _ h h Html JMeq_refl). reflexivity.
+        eapply (f_JMequal Stml' Stml0 h h2 H8 H5).
+        rewrite <- app_assoc. exists h2. reflexivity.
+        Unshelve.
+        rewrite <- app_assoc. reflexivity.
+        rewrite <- app_assoc. reflexivity.
+        rewrite <- app_assoc. reflexivity.
+        rewrite <- app_assoc, app_length, map_length. reflexivity.
+        rewrite <- app_assoc. reflexivity.
+        rewrite <- app_assoc. reflexivity.
+      - rewrite <- app_assoc. eexists. split. exact H4. reflexivity.
+      - exact H7.
+  Qed.
+
+  Lemma tml_sem_tmlist_of_ctx s G :
+    forall s0, NoDup (s0++s) -> exists Stml,
+      SQLSem.j_tml_sem ((s0++s)::G) (tmlist_of_ctx (s::List.nil)) Stml.
+  Proof.
+    induction s; intros.
+    + simpl. eexists. constructor.
+    + simpl.
+      enough (exists Stml', SQLSem.j_tml_sem ((s0 ++ a :: s)::G) (tmlist_of_ctx (s::List.nil)) Stml').
+      decompose record H0; rename x into Stml.
+      decompose record (Evl.j_fvar_sem_inside _ _ _ G H); rename x into Sa.
+      eexists. constructor. constructor. exact H2.
+      exact H1. replace (s0 ++ a :: s) with ((s0 ++ a :: List.nil) ++ s).
+      apply IHs. rewrite <- app_assoc. exact H. rewrite <- app_assoc. reflexivity.
+  Qed.
+
+  Axiom sum_id : forall m n (f : Rel.T m -> Rel.T n) r,
+     (forall x, f x ~= x) ->
+     Rel.sum r f ~= r.
+  Axiom sel_true : forall m (r : Rel.R m) p,
+     (forall x, p x ~= true) ->
+     Rel.sel r p ~= r.
+  Axiom rsum_id : forall m n (f : Rel.T m -> Rel.R n) r,
+     (forall x, f x ~= SQLSem.R_single x) ->
+     SQLSem.R_sum r f ~= r.
+
+  Lemma sql_distinct_sem d G s T ST :
+    NoDup s -> SQLSem.j_tb_sem d G s T ST ->
+    exists Sq, SQLSem.j_q_sem d G s (sql_distinct T s) Sq
+      /\ forall h, Sq h = Rel.flat (ST h).
+  Proof.
+    intros. decompose record (tml_sem_tmlist_of_ctx s G List.nil H); rename x into Stml.
+    eexists; split.
+      constructor. constructor. constructor. exact H0. constructor. reflexivity.
+      constructor. constructor. exact H1. simpl. rewrite app_nil_r. reflexivity.
+      Unshelve. shelve.
+      simpl. rewrite length_tmlist. simpl. rewrite app_nil_r. reflexivity.
+      simpl. rewrite <- plus_n_O. reflexivity.
+      reflexivity.
+    Unshelve.
+    intro; simpl. f_equal.
+    apply JMeq_eq. apply cast_JMeq.
+    eapply (JMeq_trans (sum_id _ _ _ _ _)).
+    eapply (JMeq_trans (sel_true _ _ _ _)).
+    eapply (JMeq_trans (rsum_id _ _ _ _ _)).
+    apply Rel_times_Rone.
+    Unshelve.
+    + intro Vl; simpl.
+      enough (forall h0, Stml h0 ~= Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((List.nil ++ s)::List.nil) G h0))).
+      eapply (JMeq_trans (H2 _)). (* unfold Evl.env_app; simpl. unfold Evl.subenv1; simpl. *) admit.
+      intro. eapply (f_JMequal Stml (fun h1 => Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((List.nil ++ s)::List.nil) G h1))) _ _ _ _).
+        Unshelve.
+        reflexivity. simpl. rewrite length_tmlist. simpl. rewrite app_length. reflexivity.
+        eapply tml_sem_tmlist_of_ctx_eq. exact H1. reflexivity.
+    + intros. simpl. (* wut? don't we have this in Sem? *) admit.
+    + intros. simpl. apply cast_JMeq. (* this is similar to Rel_times_Rone *) admit.
+  Admitted.
+
   Theorem rcsem_to_sqlsem : forall d G t b s St,
     RCSem.j_coll_sem d G t b s St ->
     forall qt, j_coll_x d G t b s qt ->
@@ -483,14 +592,15 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   + simpl; intros G0 x0 s0 e0. clear H; intros st0 Tt0 Hx0.
     inversion Hx0; subst. rewrite e0 in H1. injection H1; intuition.
     generalize e0; clear e0; rewrite H; intro.
+    enough (NoDup st0). Focus 2. (* require DB schemas to be duplicate free *) admit.
+    decompose record (tml_sem_tmlist_of_ctx st0 G0 List.nil H0); rename x into Stml.
     eexists; split. constructor. constructor. constructor. constructor.
     - constructor.
     - constructor.
     - shelve.
     - constructor.
     - constructor.
-    - (* XXX: semantics of: s::G |- tmlist(s) = environment projection -- do we have the proof? (13) *)
-      admit.
+    - exact H2.
     - simpl. rewrite app_nil_r. reflexivity.
     - simpl.
       (* a rather convoluted equational reasoning: perhaps we can factorize it
@@ -498,11 +608,13 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       admit.
     (* these will go away by themselves *)
     Unshelve.
-    admit. admit. admit. admit. admit. admit. admit.
+    admit. admit. admit. admit. admit. admit.
   + simpl; intros G0 t1 t2 s0 St1 St2 jt1 IHt1 jt2 IHt2. clear H. intros st0 Tt0 H.
     inversion H; subst. enough (s0 = st0). subst.
     decompose record (IHt1 _ H3). decompose record (IHt2 _ H4). rename x into Sq1'; rename x0 into Sq2'.
     intuition. 
+    enough (NoDup st0). Focus 2. (* require well formed RC to have duplicate free schemas, then derive from jt1 or H3 *) admit.
+    decompose record (tml_sem_tmlist_of_ctx st0 G0 List.nil H0); rename x into Stml.
     eexists; split. constructor. constructor. constructor. constructor. constructor. constructor.
     - exact H1.
     - exact H5.
@@ -510,8 +622,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     - reflexivity.
     - constructor.
     - constructor.
-    - (* XXX: semantics of: s::G |- tmlist(s) = environment projection -- do we have the proof? (13) *)
-      admit.
+    - exact H7.
     - simpl; rewrite app_nil_r; reflexivity.
     - simpl.
       (* a rather convoluted equational reasoning: perhaps we can factorize it *)
@@ -519,62 +630,9 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     - rewrite (j_coll_x_sem_eq_scm _ _ _ _ _ _ _ _ _ H3 jt1); reflexivity.
     (* these will go away by themselves *)
     Unshelve.
-    admit. admit. admit. admit.
+    admit. admit. admit.
   Admitted.
 
-  Lemma tml_sem_tmlist_of_ctx s G :
-    forall s0 Stml,
-      SQLSem.j_tml_sem ((s0++s)::G) (tmlist_of_ctx (s::List.nil)) Stml ->
-        Stml ~= fun h => Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((s0 ++ s)::List.nil) G h)).
-  Proof.
-    elim s.
-    + simpl. unfold tmlist_of_ctx. simpl. intros.
-      eapply (SQLSem.j_tml_nil_sem _ _ (fun _ _ => _) _ H). Unshelve.
-      simpl. intros _ Heq. eapply (existT_eq_elim Heq); clear Heq; intros _ Heq.
-      symmetry. eapply (JMeq_trans _ Heq). Unshelve.
-      apply funext_JMeq. reflexivity. reflexivity.
-      intros h1 h2 Hh; subst.
-      eapply (Vector.case0 (fun x => x ~= _)). reflexivity.
-    + simpl. unfold tmlist_of_ctx. simpl. intros.
-      eapply (SQLSem.j_tml_cons_sem _ _ _ _ (fun _ _ _ _ => _ ~= _) _ H0). Unshelve.
-      simpl; intros; subst. eapply (existT_eq_elim H6); clear H6; intros _ H6.
-      symmetry. eapply (JMeq_trans _ H6). Unshelve.
-      apply funext_JMeq. reflexivity. simpl. f_equal; f_equal. rewrite app_length. rewrite map_length. reflexivity.
-      intros h1 h2 Hh; subst.
-      inversion H2. subst.
-      enough (Evl.j_fvar_sem ((s0 ++ a :: l) :: G) 0 a St) as H7'.
-      generalize (Evl.j_fvar_sem_inside _ _ _ _ _ H7'). intro Ht.
-      (* Ht is what we need for the hd *)
-      enough (exists Stml', SQLSem.j_tml_sem (((s0 ++ a :: List.nil) ++ l)::G) (List.map (fun x => tmvar (0,x)) l ++ List.nil) Stml' /\ Stml' ~= Stml0).
-      decompose record H3. rename x into Stml'; clear H3.
-      generalize (H _ _ H6). intro Html.
-      rewrite (Vector.eta (Evl.tuple_of_env _ (Evl.env_skip (@Evl.subenv1 ((s0++a::l)::List.nil) _ h2)))).
-      apply cons_equal.
-      - rewrite Ht. apply Evl.hd_tuple_of_env.
-      - rewrite app_length. rewrite map_length. reflexivity.
-      - rewrite (Evl.tl_tuple_of_env a l List.nil _).
-        enough (exists (h : Evl.env (((s0 ++ a :: List.nil) ++ l) :: G)), h ~= h2).
-        decompose record H3; clear H3; rename x into h.
-        apply (@JMeq_trans _ _ _ _ (Stml' h)).
-        apply (@JMeq_trans _ _ _ _ 
-          (Evl.tuple_of_env (l::List.nil) (Evl.env_skip (@Evl.subenv1 (((s0 ++ a :: List.nil)++l)::List.nil) _ h)))).
-        apply (f_JMeq _ _ (Evl.tuple_of_env (l::List.nil))). apply JMeq_eq.
-        rewrite <- Evl.env_skip_single. symmetry. apply Evl.env_skip_skip.
-        eapply (f_JMequal (@Evl.subenv1 (((s0++a::List.nil)++l)::List.nil) G) (@Evl.subenv1 ((s0++a::l)::List.nil) G)).
-        simpl. rewrite <- app_assoc. reflexivity. exact H5.
-        erewrite (f_JMequal _ _ h h Html JMeq_refl). reflexivity.
-        eapply (f_JMequal Stml' Stml0 h h2 H8 H5).
-        rewrite <- app_assoc. exists h2. reflexivity.
-        Unshelve.
-        rewrite <- app_assoc. reflexivity.
-        rewrite <- app_assoc. reflexivity.
-        rewrite <- app_assoc. reflexivity.
-        rewrite <- app_assoc, app_length, map_length. reflexivity.
-        rewrite <- app_assoc. reflexivity.
-        rewrite <- app_assoc. reflexivity.
-      - rewrite <- app_assoc. eexists. split. exact H4. reflexivity.
-      - exact H7.
-  Qed.
 
 
 End RcToSql.

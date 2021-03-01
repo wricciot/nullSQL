@@ -404,27 +404,52 @@ Module Evl <: EV.
         intros _ Heq. rewrite <- Heq. reflexivity.
   Qed.
 
-  Lemma j_var_sem_inside s0 s a Sa :
+  Lemma j_var_sem_not_In s0 s a Sa :
+    j_var_sem (s0 ++ a :: s) a Sa -> ~ List.In a s.
+  Proof.
+    intro. induction s0; simpl in H.
+    + inversion H; subst; intuition.
+    + inversion H; subst; intuition. eapply IHs0. exact H5. exact H0.
+  Qed.
+
+  Lemma j_var_sem_inside_eq s0 s a Sa :
     j_var_sem (s0 ++ a :: s) a Sa ->
     forall h, Sa h = env_hd (env_skip h).
   Proof.
     intros H1 h. enough (~ List.In a s).
     generalize (jvs_hd a s H). intro H2.
     apply (j_var_sem_skip _ _ _ _ H2 _ H1).
-    induction s0.
-    + simpl in H1; inversion H1; subst; intuition.
-    + simpl in H1; inversion H1; subst; intuition. eapply IHs0.
-      exact H5. exact (env_tl h). exact H.
+    apply (j_var_sem_not_In _ _ _ _ H1).
   Qed.
 
-  Lemma j_fvar_sem_inside s0 a s G Sa : 
+  Lemma j_fvar_sem_inside_eq s0 a s G Sa : 
     j_fvar_sem ((s0 ++ a :: s)::G) 0 a Sa ->
     forall h, Sa h = env_hd (env_skip (@subenv1 ((s0 ++ a :: s)::List.nil) _ h)).
   Proof.
     intros H1 h. inversion H1; subst. apply (existT_eq_elim H0); intros; subst; clear H0 H.
-    apply (j_var_sem_inside _ _ _ _ H4).
+    apply (j_var_sem_inside_eq _ _ _ _ H4).
   Qed.
 
+  Lemma j_var_sem_inside s0 s a : 
+    NoDup (s0 ++ a :: s) ->
+    exists Sa, j_var_sem (s0 ++ a :: s) a Sa.
+  Proof.
+    intro. induction s0; simpl.
+    + eexists. constructor. simpl in H. inversion H; subst. exact H2.
+    + simpl in H. inversion H; subst. decompose record (IHs0 H3); rename x into Sa.
+      eexists. constructor.
+      - intro. apply H2. subst. apply in_or_app. right. constructor. reflexivity.
+      - exact H0.
+  Qed.
+
+  Lemma j_fvar_sem_inside s0 a s G : 
+    NoDup (s0 ++ a :: s) ->
+    exists Sa, j_fvar_sem ((s0 ++ a :: s)::G) 0 a Sa.
+  Proof.
+    intros H1.
+    decompose record (j_var_sem_inside _ _ _ H1); rename x into Sa.
+    eexists; constructor; exact H.
+  Qed.
 
 End Evl.
 
