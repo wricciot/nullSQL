@@ -1,12 +1,12 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool JMeq 
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Util RelFacts Common Eval.
 
-Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
+Module SQLSemantics (Sem: SEM) (Sql : SQL).
   Import Db.
   Import Sem.
   Import Sql.
-  Module Ev := Evl Db.
-  Import Ev.
+(*  Module Ev := Evl Db. *)
+  Import Evl.
 
   Inductive j_tm_sem0 (G:Ctx) : pretm -> (env G -> Value) -> Prop :=
   | jts_const : forall c, j_tm_sem0 G (tmconst c) (fun _ => Db.c_sem c)
@@ -87,9 +87,9 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
       s = List.map snd tml ->
       j_q_sem d G s (select b tml btbl c) 
         (fun h => let S1 := Sbtbl h in
-                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h)) in
                   let S2 := Rel.sel S1 p in
-                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let f  := fun Vl => Stml (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h) in
                   let S := cast _ _ e (Rel.sum S2 f)
                   in if b then Rel.flat S else S)
   | jqs_selstar : forall G b btbl c,
@@ -100,9 +100,9 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
       s0 = List.concat G0 ->
       j_q_sem d G s0 (selstar b btbl c) 
         (fun h => let S1 := Sbtbl h in
-                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h)) in
                   let S2 := Rel.sel S1 p in
-                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let f  := fun Vl => Stml (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h) in
                   let S := cast _ _ e (Rel.sum S2 f)
                   in if b then Rel.flat S else S)
   | jqs_union : forall G b q1 q2,
@@ -184,9 +184,9 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
       j_btbl_sem d G (G1 ++ G0) (btb::btbl)
         (fun h =>
          let Rbtb := Sbtb h in
-         R_sum Rbtb (fun Vl => cast _ _ e (Rel.times (R_single Vl) (Sbtbl (Ev.env_app _ _ (Ev.env_of_tuple _ Vl) h)))))
+         R_sum Rbtb (fun Vl => cast _ _ e (Rel.times (R_single Vl) (Sbtbl (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h)))))
 (*         let Rbtbl := Sbtbl h in
-         R_sum Rbtbl (fun Vl => cast _ _ e (Rel.times (Sbtb (Ev.env_app _  _ (Ev.env_of_tuple _ Vl) h)) (R_single Vl))))
+         R_sum Rbtbl (fun Vl => cast _ _ e (Rel.times (Sbtb (Evl.env_app _  _ (Evl.env_of_tuple _ Vl) h)) (R_single Vl))))
 *)
   with j_in_q_sem (d : Db.D) : forall G, prequery -> (env G -> bool) -> Prop :=
   | jiqs_sel : forall G b tml btbl c,
@@ -196,9 +196,9 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
       j_tml_sem (G0++G) (List.map fst tml) Stml ->
       j_in_q_sem d G (select b tml btbl c) 
         (fun h => let S1 := Sbtbl h in
-                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h)) in
                   let S2 := Rel.sel S1 p in
-                  let f  := fun Vl => Stml (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h) in
+                  let f  := fun Vl => Stml (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h) in
                   let S := Rel.sum S2 f
                   in 0 <? Rel.card (if b then Rel.flat S else S))
   | jiqs_selstar : forall G b btbl c,
@@ -207,7 +207,7 @@ Module SQLSemantics (Db : DB) (Sem: SEM Db) (Sql : SQL Db).
       j_cond_sem d (G0++G) c Sc ->
       j_in_q_sem d G (selstar b btbl c) 
         (fun h => let S1 := Sbtbl h in
-                  let p  := fun Vl => Sem.is_btrue (Sc (Ev.env_app _ _ (Ev.env_of_tuple G0 Vl) h)) in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple G0 Vl) h)) in
                   let S2 := Rel.sel S1 p in
 (*                  let f  := fun _ => Vector.nil Rel.V) in
                   let S := cast _ _ e (Rel.sum S2 f) 
@@ -259,12 +259,12 @@ no, we can simplify *)
   Lemma j_nil_btb_sem :
     forall d G G' Snil (P : Prop),
        (forall (G0 G0': Ctx), G0 = G -> G0' = G' -> List.nil = G0' ->
-        (fun (_:Ev.env G) => Rel.Rone) ~= Snil -> P) ->
+        (fun (_:Evl.env G) => Rel.Rone) ~= Snil -> P) ->
        j_btb_sem d G G' List.nil Snil -> P.
   Proof.
     intros.
     enough (forall G0 G0' (btb0 : list (pretb * Scm)) 
-      (Snil0 : Ev.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
+      (Snil0 : Evl.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
         j_btb_sem d G0 G0' btb0 Snil0 ->
         G0 = G -> G0' = G' -> List.nil = btb0 -> Snil0 ~= Snil -> P).
     apply (H1 _ _ _ _ H0 eq_refl eq_refl eq_refl JMeq_refl).
@@ -276,12 +276,12 @@ no, we can simplify *)
   Lemma j_nil_btbl_sem :
     forall d G G' Snil (P : Prop),
        (forall (G0 G0': Ctx), G0 = G -> G0' = G' -> List.nil = G0' ->
-        (fun (_:Ev.env G) => Rel.Rone) ~= Snil -> P) ->
+        (fun (_:Evl.env G) => Rel.Rone) ~= Snil -> P) ->
        j_btbl_sem d G G' List.nil Snil -> P.
   Proof.
     intros.
     enough (forall G0 G0' btbl0
-      (Snil0 : Ev.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
+      (Snil0 : Evl.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
         j_btbl_sem d G0 G0' btbl0 Snil0 ->
         G0 = G -> G0' = G' -> List.nil = btbl0 -> Snil0 ~= Snil -> P).
     apply (H1 _ _ _ _ H0 eq_refl eq_refl eq_refl JMeq_refl).
@@ -307,9 +307,9 @@ no, we can simplify *)
       eapply (j_q_sel_sem _ _ _ _ _ _ _ _ (fun _ _ s1 _ _ _ _ Ssel =>
         _ = s1 /\ (fun h =>
         let S1 := Sbtbl h in
-        let p := fun Vl => is_btrue (Sc (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h)) in
+        let p := fun Vl => is_btrue (Sc (Evl.env_app G0 G (Evl.env_of_tuple G0 Vl) h)) in
         let S2 := Rel.sel S1 p in
-        let f := fun Vl => Stml (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h) in
+        let f := fun Vl => Stml (Evl.env_app G0 G (Evl.env_of_tuple G0 Vl) h) in
         let S := cast _ _ e (Rel.sum S2 f) in
         if b then Rel.flat S else S) ~= Ssel) _ H1). Unshelve.
       intros; simpl; subst. apply (existT_eq_elim H13); clear H13; intros; subst.
@@ -390,9 +390,9 @@ no, we can simplify *)
     + intros. eapply (j_iq_sel_sem _ _ _ _ _ _ _ (fun _ _ _ _ _ _ Ssel =>
         (fun h =>
          let S1 := Sbtbl h in
-         let p := fun Vl => is_btrue (Sc (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h)) in
+         let p := fun Vl => is_btrue (Sc (Evl.env_app G0 G (Evl.env_of_tuple G0 Vl) h)) in
          let S2 := Rel.sel S1 p in
-         let f := fun Vl => Stml (Ev.env_app G0 G (Ev.env_of_tuple G0 Vl) h) in
+         let f := fun Vl => Stml (Evl.env_app G0 G (Evl.env_of_tuple G0 Vl) h) in
          let S := Rel.sum S2 f in 
          0 <? Rel.card (if b then Rel.flat S else S)) ~= Ssel) _ H1). Unshelve.
       intros; simpl; subst. apply (existT_eq_elim H11); clear H11; intros; subst.

@@ -1,6 +1,6 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat AbstractRelation Tribool Common Util.
 
-Module Type SQL (Db : DB).
+Module Type SQL.
   Import Db.
 
   (* I will probably need to declare a canonical structure/type class for Names *)

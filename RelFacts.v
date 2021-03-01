@@ -3,7 +3,7 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq Common Syntax
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Syntax AbstractRelation Util.
 
-Module Facts (Db : DB) (Sql : SQL Db).
+Module Facts (Sql : SQL).
 
   Import Db.
   Import Sql.

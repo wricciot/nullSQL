@@ -2,13 +2,13 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat RcSyntax AbstractR
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Util Common Syntax SemFacts RelFacts Eval 
   Semantics RcSemantics.
 
-Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
+Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   Import Db.
   Import Rc.
   Import Sql.
 
-  Module RF := RelFacts.Facts Db Sql.
-  Module SF := SemFacts.Facts Db.
+  Module RF := RelFacts.Facts Sql.
+  Module SF := SemFacts.Facts.
   Import RF.
   Import SF.
 
@@ -19,10 +19,8 @@ Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
   Module SQLSem3 := SQLSemantics Db S3 Sql.
 *)
 
-  Module RCSem := RcSemantics Db Sem Rc.
-  Module SQLSem := SQLSemantics Db Sem Sql.
-
-  Module Ev := Evl Db.
+  Module RCSem := RcSemantics Sem Rc.
+  Module SQLSem := SQLSemantics Sem Sql.
 
   Fixpoint undo_bigunion q :=
     match q with
@@ -343,9 +341,9 @@ Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
               /\ SQLSem.j_btbl_sem d G0 G1 Bl0' SBl0'
               /\ forall h, 
                   (let S1 := SBl0' h in
-                  let p  := fun Vl => Sem.is_btrue (Sc0' (Ev.env_app _ _ (Ev.env_of_tuple G1 Vl) h)) in
+                  let p  := fun Vl => Sem.is_btrue (Sc0' (Evl.env_app _ _ (Evl.env_of_tuple G1 Vl) h)) in
                   let S2 := Rel.sel S1 p in
-                  let f  := fun Vl => Stml0' (Ev.env_app _ _ (Ev.env_of_tuple G1 Vl) h) in
+                  let f  := fun Vl => Stml0' (Evl.env_app _ _ (Evl.env_of_tuple G1 Vl) h) in
                   let S := Rel.sum S2 f
                   in if b0 then Rel.flat S else S)
                   ~= S0 h)
@@ -527,7 +525,7 @@ Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
   Lemma tml_sem_tmlist_of_ctx s G :
     forall s0 Stml,
       SQLSem.j_tml_sem ((s0++s)::G) (tmlist_of_ctx (s::List.nil)) Stml ->
-        Stml ~= fun h => Ev.tuple_of_env (s::List.nil) (Ev.env_skip (@Ev.subenv1 ((s0 ++ s)::List.nil) G h)).
+        Stml ~= fun h => Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((s0 ++ s)::List.nil) G h)).
   Proof.
     elim s.
     + simpl. unfold tmlist_of_ctx. simpl. intros.
@@ -544,25 +542,25 @@ Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
       apply funext_JMeq. reflexivity. simpl. f_equal; f_equal. rewrite app_length. rewrite map_length. reflexivity.
       intros h1 h2 Hh; subst.
       inversion H2. subst.
-      enough (Ev.j_fvar_sem ((s0 ++ a :: l) :: G) 0 a St) as H7'.
-      generalize (Ev.j_fvar_sem_inside _ _ _ _ _ H7'). intro Ht.
+      enough (Evl.j_fvar_sem ((s0 ++ a :: l) :: G) 0 a St) as H7'.
+      generalize (Evl.j_fvar_sem_inside _ _ _ _ _ H7'). intro Ht.
       (* Ht is what we need for the hd *)
       enough (exists Stml', SQLSem.j_tml_sem (((s0 ++ a :: List.nil) ++ l)::G) (List.map (fun x => tmvar (0,x)) l ++ List.nil) Stml' /\ Stml' ~= Stml0).
       decompose record H3. rename x into Stml'; clear H3.
       generalize (H _ _ H6). intro Html.
-      rewrite (Vector.eta (Ev.tuple_of_env _ (Ev.env_skip (@Ev.subenv1 ((s0++a::l)::List.nil) _ h2)))).
+      rewrite (Vector.eta (Evl.tuple_of_env _ (Evl.env_skip (@Evl.subenv1 ((s0++a::l)::List.nil) _ h2)))).
       apply cons_equal.
-      - rewrite Ht. (* can't look into tuple_of_env *) admit.
+      - rewrite Ht. apply Evl.hd_tuple_of_env.
       - rewrite app_length. rewrite map_length. reflexivity.
-      - rewrite (Ev.tl_tuple_of_env a l List.nil _).
-        enough (exists (h : Ev.env (((s0 ++ a :: List.nil) ++ l) :: G)), h ~= h2).
+      - rewrite (Evl.tl_tuple_of_env a l List.nil _).
+        enough (exists (h : Evl.env (((s0 ++ a :: List.nil) ++ l) :: G)), h ~= h2).
         decompose record H3; clear H3; rename x into h.
         apply (@JMeq_trans _ _ _ _ (Stml' h)).
         apply (@JMeq_trans _ _ _ _ 
-          (Ev.tuple_of_env (l::List.nil) (Ev.env_skip (@Ev.subenv1 (((s0 ++ a :: List.nil)++l)::List.nil) _ h)))).
-        apply (f_JMeq _ _ (Ev.tuple_of_env (l::List.nil))). apply JMeq_eq.
-        rewrite <- Ev.env_skip_single. symmetry. apply Ev.env_skip_skip.
-        eapply (f_JMequal (@Ev.subenv1 (((s0++a::List.nil)++l)::List.nil) G) (@Ev.subenv1 ((s0++a::l)::List.nil) G)).
+          (Evl.tuple_of_env (l::List.nil) (Evl.env_skip (@Evl.subenv1 (((s0 ++ a :: List.nil)++l)::List.nil) _ h)))).
+        apply (f_JMeq _ _ (Evl.tuple_of_env (l::List.nil))). apply JMeq_eq.
+        rewrite <- Evl.env_skip_single. symmetry. apply Evl.env_skip_skip.
+        eapply (f_JMequal (@Evl.subenv1 (((s0++a::List.nil)++l)::List.nil) G) (@Evl.subenv1 ((s0++a::l)::List.nil) G)).
         simpl. rewrite <- app_assoc. reflexivity. exact H5.
         erewrite (f_JMequal _ _ h h Html JMeq_refl). reflexivity.
         eapply (f_JMequal Stml' Stml0 h h2 H8 H5).
@@ -571,12 +569,12 @@ Module RcToSql (Db : DB) (Sem : SEM Db) (Rc : RC Db) (Sql : SQL Db).
         rewrite <- app_assoc. reflexivity.
         rewrite <- app_assoc. reflexivity.
         rewrite <- app_assoc. reflexivity.
-        rewrite <- app_assoc. (* some problems because SQLSem.Ev doesn't match Ev *) admit.
+        rewrite <- app_assoc, app_length, map_length. reflexivity.
         rewrite <- app_assoc. reflexivity.
         rewrite <- app_assoc. reflexivity.
       - rewrite <- app_assoc. eexists. split. exact H4. reflexivity.
-      - (* it's just Hseven *) admit.
-  Admitted.
+      - exact H7.
+  Qed.
 
 
 End RcToSql.
@@ -584,8 +582,6 @@ End RcToSql.
 (*
 BIGGIES
 -------
-
-A) add where conditions to comprehensions in RC
 
 B) the comprehension case appears to be involved!
 
@@ -603,9 +599,6 @@ SMALLISH
 5) semantics of complex SQL terms
 
 12) factorizing the semantics of sql_distinct is a good idea!
-
-13) do we have the proof that [| s::G |- tmlist(s) |] is an env (s::G) -> env [s] projection?
-
 
 
 TRAINING

@@ -1,13 +1,12 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat RcSyntax AbstractRelation Bool.Sumbool Tribool JMeq 
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Util Common Eval SemFacts.
 
-Module RcSemantics (Db : DB) (Sem: SEM Db) (Rc : RC Db).
+Module RcSemantics (Sem: SEM) (Rc : RC).
   Import Db.
   Import Rc.
   Import Sem.
-  Module Ev := Evl Db.
-  Import Ev.
-  Module SF := SemFacts.Facts Db.
+  Import Evl.
+  Module SF := SemFacts.Facts.
   Import SF.
 
   (* alternate -- not stronger but easier -- version of sum *)

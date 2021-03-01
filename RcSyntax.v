@@ -1,9 +1,6 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat AbstractRelation Tribool Common.
 
-Axiom BaseConst : Type.
-Axiom Name : Type.
-
-Module Type RC (Db : DB).
+Module Type RC.
   Import Db.
 
   Inductive tm :=

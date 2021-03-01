@@ -61,24 +61,24 @@ Proof.
 Qed.
 
 
-Module Type DB.
-  Parameter Name : Type.
-  Hypothesis Name_dec : forall x y:Name, {x = y} + {x <> y}. 
+Module Db.
+  Axiom Name : Type.
+  Axiom Name_dec : forall x y:Name, {x = y} + {x <> y}. 
   Definition FullName := (Name * Name)%type.
   Definition FullVar  := (nat * Name)%type.
   Definition Scm      := list Name.         (* schema (attribute names for a relation) *)
   Definition Ctx      := list Scm.          (* context (domain of an environment) = list of lists of names *)
 
-  Parameter BaseConst : Type.
+  Axiom BaseConst : Type.
   Definition Value    := option BaseConst.
   Definition null     : Value := None.
   Definition c_sem     : BaseConst -> Value := Some.    (* semantics of constants *)
 
   Declare Module Rel  : REL with Definition V := Value.
 
-  Parameter D         : Type.
-  Variable db_schema  : D -> Name -> option (list Name).
-  Hypothesis db_rel   : forall d n xl, db_schema d n = Some xl -> Rel.R (List.length xl).
+  Axiom D          : Type.
+  Axiom db_schema  : D -> Name -> option (list Name).
+  Axiom db_rel   : forall d n xl, db_schema d n = Some xl -> Rel.R (List.length xl).
   Implicit Arguments db_rel [d n xl].
 
   Lemma Scm_dec (s1 s2 : Scm) : {s1 = s2} + {s1 <> s2}.
@@ -107,9 +107,9 @@ Module Type DB.
   Definition FullName_eq : FullName -> FullName -> bool :=
     fun A B => match FullName_dec A B with left _ => true | right _ => false end.
 
-  Parameter c_eq : BaseConst -> BaseConst -> bool.
-  Hypothesis BaseConst_dec : forall (c1 c2 : BaseConst), { c1 = c2 } + { c1 <> c2 }.
-  Hypothesis BaseConst_eqb_eq : forall (c1 c2 : BaseConst), c_eq c1 c2 = true <-> c1 = c2.
+  Axiom c_eq : BaseConst -> BaseConst -> bool.
+  Axiom BaseConst_dec : forall (c1 c2 : BaseConst), { c1 = c2 } + { c1 <> c2 }.
+  Axiom BaseConst_eqb_eq : forall (c1 c2 : BaseConst), c_eq c1 c2 = true <-> c1 = c2.
 
-End DB.
+End Db.
 

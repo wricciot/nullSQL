@@ -1,7 +1,7 @@
 Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool JMeq 
   FunctionalExtensionality ProofIrrelevance Eqdep_dec EqdepFacts Omega Util RelFacts Common.
 
-Module Type EV (Db : DB).
+Module Type EV.
   Import Db.
 
   Parameter preenv : Type.  (* environment (for evaluation) *)
@@ -18,7 +18,7 @@ Module Type EV (Db : DB).
 
 End EV.
 
-Module Evl (Db : DB) <: EV Db.
+Module Evl <: EV.
   Import Db.
 
   Definition preenv := list Value. (* environment (for evaluation) *)
@@ -159,6 +159,12 @@ Module Evl (Db : DB) <: EV Db.
         rewrite (IHHa _ H6). reflexivity.
   Qed.
 
+  Lemma j_var_sem_In : 
+    forall s a Sa, j_var_sem s a Sa -> List.In a s.
+  Proof.
+    intros. induction H; intuition.
+  Qed.
+
   Definition subenv1 {G1} {G2} : env (G1++G2) -> env G1.
     refine (fun h => _).
     enough ((length (concat G1) =? length (firstn (length (concat G1)) (projT1 h))) = true).
@@ -237,6 +243,24 @@ Module Evl (Db : DB) <: EV Db.
     env_skip h ~= env_tl h.
   Proof.
     reflexivity.
+  Qed.
+
+  Lemma hd_tuple_of_env a s G (h : env ((a::s)::G)) : 
+    Vector.hd (tuple_of_env _ h) = env_hd h.
+  Proof.
+    change (@hd Rel.V (list_sum (List.map (List.length (A:=Name)) (s::G))) (tuple_of_env ((a::s)::G) h) = env_hd h).
+    destruct h. unfold tuple_of_env. simpl. unfold env_hd.
+    simpl. eapply unopt_elim. destruct x; simpl.
+    + intros. discriminate H.
+    + intros. injection H; intro; subst. apply JMeq_eq.
+      generalize (proj1 (Nat.eqb_eq _ _) e); simpl; intro. injection H0; clear H0; intro H0.
+      apply (@JMeq_trans _ _ _ _ (hd (cons _ y _ (of_list x)))).
+      eapply (f_JMequal (@hd _ _) (@hd _ _ ) _ _ _ _). reflexivity.
+      Unshelve.
+      rewrite <- H0. rewrite <- length_concat_list_sum. rewrite app_length. reflexivity.
+      rewrite <- H0. rewrite <- length_concat_list_sum. rewrite app_length. reflexivity.
+      rewrite <- H0. rewrite <- length_concat_list_sum. rewrite app_length. reflexivity.
+      apply cast_JMeq. reflexivity.
   Qed.
 
   Lemma tl_tuple_of_env a s G (h : env ((a::s)::G)) : 
@@ -375,10 +399,10 @@ Module Evl (Db : DB) <: EV Db.
     + intros. simpl. replace Sa' with Sa. reflexivity.
       eapply j_var_sem_fun. exact H1. exact H.
     + simpl; intros a0 s1 IH Sa' HSa' h. inversion HSa'.
-      - contradiction H3. (* by H1 *) admit.
+      - contradiction H3. apply in_or_app. right. apply (j_var_sem_In _ _ _ H1).
       - rewrite <- (IH _ H5). apply (existT_eq_elim H2).
         intros _ Heq. rewrite <- Heq. reflexivity.
-  Admitted.
+  Qed.
 
   Lemma j_var_sem_inside s0 s a Sa :
     j_var_sem (s0 ++ a :: s) a Sa ->
@@ -387,9 +411,11 @@ Module Evl (Db : DB) <: EV Db.
     intros H1 h. enough (~ List.In a s).
     generalize (jvs_hd a s H). intro H2.
     apply (j_var_sem_skip _ _ _ _ H2 _ H1).
-    (* by H1 *)
-    admit.
-  Admitted.
+    induction s0.
+    + simpl in H1; inversion H1; subst; intuition.
+    + simpl in H1; inversion H1; subst; intuition. eapply IHs0.
+      exact H5. exact (env_tl h). exact H.
+  Qed.
 
   Lemma j_fvar_sem_inside s0 a s G Sa : 
     j_fvar_sem ((s0 ++ a :: s)::G) 0 a Sa ->
@@ -402,7 +428,7 @@ Module Evl (Db : DB) <: EV Db.
 
 End Evl.
 
-Module Type SEM (Db : DB).
+Module Type SEM.
   Import Db.
   Parameter B : Type.
   Parameter btrue : B.
@@ -426,7 +452,7 @@ Module Type SEM (Db : DB).
     P (sem_bpred n p l Hl).
 End SEM.
 
-Module Sem2 (Db : DB) <: SEM Db.
+Module Sem2 <: SEM.
   Import Db.
   Definition B := bool.
   Definition btrue := true.
@@ -482,7 +508,7 @@ Module Sem2 (Db : DB) <: SEM Db.
 
 End Sem2.
 
-Module Sem3 (Db : DB) <: SEM Db.
+Module Sem3 <: SEM.
   Import Db.
   Definition B := tribool.
   Definition btrue := ttrue.
