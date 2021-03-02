@@ -94,7 +94,7 @@ Module Facts.
   Proof.
     destr_tribool.
   Qed.
-
+  
   Lemma S3_is_btrue_and_elim (b1 b2 : tribool) (P : Prop) :
     (S3.is_btrue b1 = true -> S3.is_btrue b2 = true -> P) ->
     S3.is_btrue (b1 && b2) = true -> P.

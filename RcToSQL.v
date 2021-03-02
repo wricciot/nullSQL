@@ -391,15 +391,60 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       apply IHs. rewrite <- app_assoc. exact H. rewrite <- app_assoc. reflexivity.
   Qed.
 
-  Axiom sum_id : forall m n (f : Rel.T m -> Rel.T n) r,
+  Lemma sum_id : forall m n (f : Rel.T m -> Rel.T n) r,
+     m = n ->
      (forall x, f x ~= x) ->
      Rel.sum r f ~= r.
-  Axiom sel_true : forall m (r : Rel.R m) p,
-     (forall x, p x ~= true) ->
-     Rel.sel r p ~= r.
+  Proof.
+    intros. subst. apply eq_JMeq. eapply Rel.p_ext.
+    intros v. rewrite Rel.p_sum.
+    replace (fun x => Rel.T_eqb (f x) v) with (fun v' => Rel.T_eqb v' v).
+    eapply filter_supp_elim; simpl; intro.
+    + omega.
+    + destruct (or_eq_lt_n_O (Rel.memb r v)); intuition.
+      contradiction H. apply Rel.p_fs. exact H1.
+    + extensionality v'. rewrite H0. reflexivity.
+  Qed.
+
   Axiom rsum_id : forall m n (f : Rel.T m -> Rel.R n) r,
      (forall x, f x ~= SQLSem.R_single x) ->
      SQLSem.R_sum r f ~= r.
+
+  Lemma env_skip_nil : forall s' G' h', @Evl.env_skip s' G' List.nil h' = h'.
+  Proof.
+    intros. reflexivity.
+  Qed.
+
+  Lemma qunion_sem d G s b q1 q2 :
+    forall Sq1 Sq2,
+    SQLSem.j_q_sem d G s q1 Sq1 ->
+    SQLSem.j_q_sem d G s q2 Sq2 ->
+    exists Sq, SQLSem.j_q_sem d G s (qunion b q1 q2) Sq
+      /\ forall h, Sq h = if b then(Rel.plus (Sq1 h) (Sq2 h)) else (Rel.flat (Rel.plus (Sq1 h) (Sq2 h))).
+  Proof.
+    intros. eexists; split. constructor. exact H. exact H0.
+    simpl. intro. reflexivity.
+  Qed.
+
+(*
+  Lemma sql_select_sem d G s b tl Bl c :
+    length tl = length s ->
+    forall G1 SBl Sc Stl,
+     SQLSem.j_btbl_sem d G G1 Bl SBl ->
+     SQLSem.j_cond_sem d (G1 ++ G) c Sc ->
+     SQLSem.j_tml_sem (G1 ++ G) tl Stl ->
+    exists Sq, SQLSem.j_q_sem d G s (sql_select b (combine tl s) Bl c) Sq
+    /\ forall h, Sq h ~= let S1 := SBl h in
+                  let p  := fun Vl => Sem.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple G1 Vl) h)) in
+                  let S2 := Rel.sel S1 p in
+                  let f  := fun Vl => Stl(Evl.env_app _ _ (Evl.env_of_tuple G1 Vl) h) in
+                  let S := Rel.sum S2 f
+                  in if b then Rel.flat S else S.
+  Proof.
+    intro. rewrite <- (map_fst_combine _ _ _ _ H) at .
+    intros. eexists; split. constructor. exact H0. exact H1.
+      rewrite map_fst_combine.
+*)
 
   Lemma sql_distinct_sem d G s T ST :
     NoDup s -> SQLSem.j_tb_sem d G s T ST ->
@@ -417,21 +462,40 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     Unshelve.
     intro; simpl. f_equal.
     apply JMeq_eq. apply cast_JMeq.
-    eapply (JMeq_trans (sum_id _ _ _ _ _)).
-    eapply (JMeq_trans (sel_true _ _ _ _)).
+    eapply (JMeq_trans (sum_id _ _ _ _ _ _)).
+    erewrite sel_true.
     eapply (JMeq_trans (rsum_id _ _ _ _ _)).
     apply Rel_times_Rone.
+    intros; simpl. (* add hypothesis to Sem. *) admit.
     Unshelve.
+    + rewrite length_tmlist; simpl; rewrite app_length; reflexivity.
     + intro Vl; simpl.
       enough (forall h0, Stml h0 ~= Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((List.nil ++ s)::List.nil) G h0))).
-      eapply (JMeq_trans (H2 _)). (* unfold Evl.env_app; simpl. unfold Evl.subenv1; simpl. *) admit.
+      eapply (JMeq_trans (H2 _)). 
+      rewrite env_skip_nil. rewrite subenv1_app. unfold Evl.env_app; simpl. unfold Evl.tuple_of_env; simpl.
+      apply cast_JMeq. rewrite app_nil_r. eapply (JMeq_trans (Evl.of_list_to_list_opp _ _ _)).
+      apply (split_ind Vl). intros; subst. apply (Vector.case0 (fun v0 => fst (v1, v0) ~= append v1 v0)).
+      symmetry. apply vector_append_nil_r.
       intro. eapply (f_JMequal Stml (fun h1 => Evl.tuple_of_env (s::List.nil) (Evl.env_skip (@Evl.subenv1 ((List.nil ++ s)::List.nil) G h1))) _ _ _ _).
         Unshelve.
         reflexivity. simpl. rewrite length_tmlist. simpl. rewrite app_length. reflexivity.
         eapply tml_sem_tmlist_of_ctx_eq. exact H1. reflexivity.
-    + intros. simpl. (* wut? don't we have this in Sem? *) admit.
     + intros. simpl. apply cast_JMeq. (* this is similar to Rel_times_Rone *) admit.
   Admitted.
+
+  Lemma eq_plus_dep m n (e : m = n) :
+    forall (r1 r2 : Rel.R m) (r1' r2' : Rel.R n),
+    r1 ~= r1' -> r2 ~= r2' -> Rel.plus r1 r2 ~= Rel.plus r1' r2'.
+  Proof.
+    rewrite e. intros. rewrite H, H0. reflexivity.
+  Qed.
+
+  Lemma eq_flat_dep m n (e : m = n) :
+    forall (r1 : Rel.R m) (r2 : Rel.R n),
+    r1 ~= r2 -> Rel.flat r1 ~= Rel.flat r2.
+  Proof.
+    rewrite e. intros. rewrite H. reflexivity.
+  Qed.
 
   Theorem rcsem_to_sqlsem : forall d G t b s St,
     RCSem.j_coll_sem d G t b s St ->
@@ -527,20 +591,28 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       rename x into G1; rename x0 into Stl1'; rename x1 into Sc'; rename x2 into SBl1'.
       enough (exists Stl1'', SQLSem.j_tml_sem (G1 ++ G0) (List.map fst (combine tl1' s0)) Stl1'').
       decompose record H6; clear H6; rename x into Stl1''.
-      eexists. split. constructor. constructor.
-      exact H5. exact H4. exact H9.
-      symmetry. apply map_snd_combine. symmetry. apply (j_disjunct_x_length _ _ _ _ _ _ _ _ H3).
-      exact H1.
-      intro.
-      (* here the rewriting is blocked by the presence of an admit-related metavariable, which will go away,
-         but there's also some reasoning on equastions and casts that must disappear.
-         We also need to use a rewrite <- H6, and a destruct b0 because of the test on (negb b0) *)
-      admit.
-      replace (List.map fst (combine tl1' s0)) with tl1'. eexists; exact H0.
-      symmetry. apply map_fst_combine. symmetry. apply (j_disjunct_x_length _ _ _ _ _ _ _ _ H3).
-      Unshelve.
-      generalize (j_disjunct_x_length _ _ _ _ _ _ _ _ H3); intro Hlen.
-      erewrite map_fst_combine. rewrite Hlen; reflexivity. rewrite Hlen; reflexivity.
+      assert (length tl1' = length s0). symmetry. apply (j_disjunct_x_length _ _ _ _ _ _ _ _ H3).
+      epose (Hq := (SQLSem.jqs_sel _ _ b0 _ _ _ _ _ _ _ s0 _ H5 H4 H9 _)).
+        Unshelve. shelve. shelve. 
+        rewrite (map_fst_combine _ _ _ _ H6), H6; reflexivity.
+        rewrite (map_snd_combine _ _ _ _ H6); reflexivity.
+        Unshelve.
+      clearbody Hq.
+      decompose record (qunion_sem _ _ _ (negb b0) _ _ _ _ Hq H1); rename x into Squ.
+      exists Squ; split. exact H11.
+      intro. rewrite H12; clear H12. destruct b0; simpl.
+      * apply eq_JMeq. f_equal. apply JMeq_eq. apply eq_plus_dep. reflexivity.
+        rewrite <- H8. apply eq_flat_dep. symmetry; exact H6.
+        apply cast_JMeq. generalize dependent Stl1''. rewrite (map_fst_combine _ _ _ _ H6). intros.
+        rewrite (SQLSem.j_tml_sem_fun _ _ _ H0 _ H9). reflexivity.
+        apply H2.
+      * eapply eq_plus_dep. reflexivity.
+        apply cast_JMeq. rewrite <- H8.
+        generalize dependent Stl1''. rewrite (map_fst_combine _ _ _ _ H6). intros.
+        rewrite (SQLSem.j_tml_sem_fun _ _ _ H0 _ H9). reflexivity.
+        apply H2.
+      * replace (List.map fst (combine tl1' s0)) with tl1'. eexists; exact H0.
+        symmetry. apply map_fst_combine. symmetry. apply (j_disjunct_x_length _ _ _ _ _ _ _ _ H3).
   (*-- mutual induction cases: disjunct --*)
   + simpl; intros G0 b0 tup c stup Stup Sc jtup jc IHc. clear H; intros tml0' c0' Bl0' H.
     inversion H; simpl; subst. clear H3.
@@ -592,48 +664,22 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   + simpl; intros G0 x0 s0 e0. clear H; intros st0 Tt0 Hx0.
     inversion Hx0; subst. rewrite e0 in H1. injection H1; intuition.
     generalize e0; clear e0; rewrite H; intro.
-    enough (NoDup st0). Focus 2. (* require DB schemas to be duplicate free *) admit.
-    decompose record (tml_sem_tmlist_of_ctx st0 G0 List.nil H0); rename x into Stml.
-    eexists; split. constructor. constructor. constructor. constructor.
-    - constructor.
-    - constructor.
-    - shelve.
-    - constructor.
-    - constructor.
-    - exact H2.
-    - simpl. rewrite app_nil_r. reflexivity.
-    - simpl.
-      (* a rather convoluted equational reasoning: perhaps we can factorize it
-         it probably boils down to proving some eta-equality for sum *)
-      admit.
-    (* these will go away by themselves *)
-    Unshelve.
-    admit. admit. admit. admit. admit. admit.
+    assert (NoDup st0). (* require DB schemas to be duplicate free *) admit.
+    epose (Hq := (sql_distinct_sem d G0 st0 (tbbase x0) _ _ _)); clearbody Hq.
+      Unshelve. shelve. shelve. exact H0. constructor.
+      Unshelve. decompose record Hq; clear Hq; rename x into Sq.
+    eexists; split. constructor. exact H3. intro; apply eq_JMeq; apply H4.
   + simpl; intros G0 t1 t2 s0 St1 St2 jt1 IHt1 jt2 IHt2. clear H. intros st0 Tt0 H.
     inversion H; subst. enough (s0 = st0). subst.
     decompose record (IHt1 _ H3). decompose record (IHt2 _ H4). rename x into Sq1'; rename x0 into Sq2'.
     intuition. 
-    enough (NoDup st0). Focus 2. (* require well formed RC to have duplicate free schemas, then derive from jt1 or H3 *) admit.
-    decompose record (tml_sem_tmlist_of_ctx st0 G0 List.nil H0); rename x into Stml.
-    eexists; split. constructor. constructor. constructor. constructor. constructor. constructor.
-    - exact H1.
-    - exact H5.
-    - constructor.
-    - reflexivity.
-    - constructor.
-    - constructor.
-    - exact H7.
-    - simpl; rewrite app_nil_r; reflexivity.
-    - simpl.
-      (* a rather convoluted equational reasoning: perhaps we can factorize it *)
-      admit.
-    - rewrite (j_coll_x_sem_eq_scm _ _ _ _ _ _ _ _ _ H3 jt1); reflexivity.
-    (* these will go away by themselves *)
-    Unshelve.
-    admit. admit. admit.
+    assert (NoDup st0). (* require well formed RC to have duplicate free schemas, then derive from jt1 or H3 *) admit.
+    epose (Hq := (sql_distinct_sem d G0 st0 (tbquery (q1' EXCEPT ALL q2')) _ _ _)); clearbody Hq.
+      Unshelve. shelve. shelve. shelve. exact H0. constructor. constructor. exact H1. exact H5.
+      Unshelve. decompose record Hq; clear Hq; rename x into Sq.
+    eexists; split. constructor. exact H8. intro; rewrite <- H2, <- H6, H9; reflexivity.
+    rewrite (j_coll_x_sem_eq_scm _ _ _ _ _ _ _ _ _ H3 jt1); reflexivity.
   Admitted.
-
-
 
 End RcToSql.
 
@@ -655,8 +701,6 @@ SMALLISH
 --------
 
 5) semantics of complex SQL terms
-
-12) factorizing the semantics of sql_distinct is a good idea!
 
 
 TRAINING

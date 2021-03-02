@@ -243,7 +243,7 @@ Module Facts (Sql : SQL).
   Lemma filter_supp_elim n R r (P : list (Rel.T n) -> Prop) :
     (List.In r (Rel.supp R) -> P (r::List.nil)) ->
     (~ List.In r (Rel.supp R) -> P List.nil) ->
-    P (filter (fun (x0 : Rel.T n) => Rel.T_eqb x0 r) (Rel.supp R)).
+     P (filter (fun (x0 : Rel.T n) => Rel.T_eqb x0 r) (Rel.supp R)). 
   Proof.
     destruct (filter_supp_eq_tech _ (Rel.supp R) r (Rel.p_nodup _ R)).
     destruct (List.in_dec (Rel.T_dec _) r (Rel.supp R)); intros.

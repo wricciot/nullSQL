@@ -76,6 +76,7 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
   Implicit Arguments times [m n].
   Implicit Arguments sum [m n].
   Implicit Arguments sel [n].
+  Implicit Arguments rsum [m n].
 
   Definition card {n} := fun S => memb (@sum n 0 S (fun _ => Vector.nil _)) (Vector.nil _).
 
@@ -166,11 +167,6 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     apply IHl. simpl in H. destruct (dec a x); intuition.
     rewrite count_occ_app. rewrite H0. rewrite count_occ_repeat_neq. reflexivity.
     simpl in H. destruct (dec a x); intuition.
-  Qed.
-
-  Lemma or_eq_lt_n_O n : n = 0 \/ 0 < n.
-  Proof.
-    destruct (Nat.eq_dec n 0); intuition.
   Qed.
 
   Lemma count_occ_nodup {A} {dec} l (x:A) : 
@@ -562,9 +558,6 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     generalize e; clear e. rewrite H0. intros. f_equal.
     destruct e. apply JMeq_eq. destruct e0. reflexivity.
   Qed.
-
-  Axiom rsum  : forall m n, R m -> (T m -> R n) -> R n.
-  Implicit Arguments rsum [m n].
 
   Axiom Rsingle : forall n, T n -> R n.
   Implicit Arguments Rsingle [n].

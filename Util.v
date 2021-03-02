@@ -18,6 +18,11 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     rewrite H. reflexivity.
   Qed.
 
+  Lemma or_eq_lt_n_O n : n = 0 \/ 0 < n.
+  Proof.
+    destruct (Nat.eq_dec n 0); intuition.
+  Qed.
+
   Fixpoint cmap_length {A B : Type} (f : A -> B) l : List.length (List.map f l) = List.length l.
   refine (match l with List.nil => _ | List.cons h t => _ end).
   exact eq_refl.
