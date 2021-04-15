@@ -29,8 +29,6 @@ Module RcSemantics (Sem: SEM) (Rc : RC).
     rewrite repeat_length. reflexivity.
   Defined.
 
-  Axiom env_of_tuple : forall G, Db.Rel.T (list_sum (List.map (List.length (A:=Name)) G)) -> env G.
-
   Inductive j_base_sem (d : Db.D) : forall G (t :  tm), (env G -> Value) -> Prop :=
   | jbs_cst  : forall G c,
       j_base_sem d G (cst c) (fun _ => Db.c_sem c)
@@ -85,7 +83,7 @@ Module RcSemantics (Sem: SEM) (Rc : RC).
       j_gen_sem d G q2 b sq2 Sq2 ->
       j_disjunct_sem d (sq2::G) q1 b sq1 Sq1 ->
       j_disjunct_sem d G (comprn q1 q2) b sq1 (fun h =>
-        let f := fun (Vl : Rel.T (length sq2)) => Sq1 (env_app _ _ (env_of_tuple (sq2::List.nil) (cast _ _ e Vl)) h) in
+        let f := fun (Vl : Rel.T (length sq2)) => Sq1 (env_app _ _ (Evl.env_of_tuple (sq2::List.nil) (cast _ _ e Vl)) h) in
         let S := Rel.rsum (Sq2 h) f in
         if b then Rel.flat S else S)
 

@@ -29,6 +29,16 @@ Module Facts (Sql : SQL).
     intro. apply H. reflexivity.
   Qed.
 
+  Lemma eq_rsum_dep : forall m1 m2 n1 n2 : nat,
+       m1 = m2 ->
+       n1 = n2 ->
+       forall (r1 : Rel.R m1) (r2 : Rel.R m2) (f : Rel.T m1 -> Rel.R n1) (g : Rel.T m2 -> Rel.R n2),
+       r1 ~= r2 -> f ~= g -> Rel.rsum r1 f ~= Rel.rsum r2 g.
+  Proof.
+    intros; subst. rewrite H1, H2. reflexivity.
+  Qed.
+
+
   Lemma eq_T_eqb_iff {m} {n} (t1 t2 : Rel.T m) (t3 t4 : Rel.T n) : 
     (t1 = t2 <-> t3 = t4) -> Rel.T_eqb t1 t2 = Rel.T_eqb t3 t4.
   Proof.
@@ -195,6 +205,15 @@ Module Facts (Sql : SQL).
       apply Rel.p_fs. rewrite eSt. omega.
   Qed.
 
+  Lemma sel_false {n} (S : Rel.R n) p : (forall r, List.In r (Rel.supp S) -> p r = false) -> Rel.sel S p = Rel.Rnil.
+  Proof.
+    intro. apply Rel.p_ext. intro. rewrite Rel.p_nil. destruct (p t) eqn:ept.
+    + rewrite Rel.p_selt; auto. destruct (Rel.memb S t) eqn:eSt; auto.
+      erewrite H in ept. discriminate ept. 
+      apply Rel.p_fs. rewrite eSt. omega.
+    + rewrite Rel.p_self; auto.
+  Qed.
+
   Lemma eq_memb_dep_elim1 : forall (P : nat -> Prop) m n (S1:Rel.R m) (S2 : Rel.R n) r2,
     m = n -> S1 ~= S2 ->
     (forall r1, r1 ~= r2 -> P (Rel.memb S1 r1)) ->
@@ -294,5 +313,86 @@ Module Facts (Sql : SQL).
     + rewrite (Rel.p_selt _ _ _ _ ep). rewrite (Rel.p_selt _ _ _ _ (Hpq _ ep)). reflexivity.
     + rewrite (Rel.p_self _ _ _ _ ep). intuition.
   Qed.
+
+(*******)
+
+  Lemma sum_id : forall m n (f : Rel.T m -> Rel.T n) r,
+     m = n ->
+     (forall x, f x ~= x) ->
+     Rel.sum r f ~= r.
+  Proof.
+    intros. subst. apply eq_JMeq. eapply Rel.p_ext.
+    intros v. rewrite Rel.p_sum.
+    replace (fun x => Rel.T_eqb (f x) v) with (fun v' => Rel.T_eqb v' v).
+    eapply filter_supp_elim; simpl; intro.
+    + omega.
+    + destruct (or_eq_lt_n_O (Rel.memb r v)); intuition.
+      contradiction H. apply Rel.p_fs. exact H1.
+    + extensionality v'. rewrite H0. reflexivity.
+  Qed.
+
+  Axiom rsum_id : forall m n (f : Rel.T m -> Rel.R n) r,
+     (forall x, f x ~= Rel.Rsingle x) ->
+     Rel.rsum r f ~= r.
+
+  Lemma Rel_Rone_times n (r : Rel.R n) : Rel.times Rel.Rone r ~= r.
+  Proof.
+    apply p_ext_dep. omega.
+    intros t1 t2 et1t2.
+    enough (forall t0, t1 = append t0 t2 -> Rel.memb (Rel.times Rel.Rone r) t1 = Rel.memb r t2).
+    apply (H (Vector.nil _)). symmetry. apply JMeq_eq.
+    symmetry. exact et1t2.
+    intros. rewrite H. rewrite (Rel.p_times _ _ _ _ _ _ _ eq_refl).
+    eapply (case0 (fun x => Rel.memb Rel.Rone x * Rel.memb r t2 = Rel.memb r t2) _ t0). Unshelve. simpl. rewrite Rel.p_one. omega.
+  Qed.
+
+  (* maybe derive from another result: R_sum r (fun Vl => R_single x) = R.sum r (fun Vl => x). *)
+  Axiom rsum_single : forall n (r : Rel.R n), Rel.rsum r (fun Vl => Rel.Rsingle Vl) ~= r.
+
+  Lemma rsum_rsum {m n o} (r : Rel.R m) (f : Rel.T m -> Rel.R n) (g: Rel.T n -> Rel.R o) 
+    : Rel.rsum (Rel.rsum r f) g = Rel.rsum r (fun x => Rel.rsum (f x) g).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma sel_rsum {m n} (r : Rel.R m) (p : Rel.T n -> bool) (f : Rel.T m -> Rel.R n)
+    : Rel.sel (Rel.rsum r f) p = Rel.rsum r (fun x => (Rel.sel (f x) p)).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma eq_sum_rsum {m n} r (f : Rel.T m -> Rel.T n) : Rel.sum r f = Rel.rsum r (fun x => Rel.Rsingle (f x)).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma sel_times_single {m n} (r : Rel.R m) (x : Rel.T n) p : 
+    Rel.sel (Rel.times r (Rel.Rsingle x)) p = Rel.times (Rel.sel r (fun Vl => p (append Vl x))) (Rel.Rsingle x).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma rsum_times_single {m n o} (r : Rel.R m) (x : Rel.T n) (f : Rel.T (m + n) -> Rel.R o) :
+    Rel.rsum (Rel.times r (Rel.Rsingle x)) f = Rel.rsum r (fun Vl => f (append Vl x)).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma flat_rsum_flat {m n} (r : Rel.R m) (fr : Rel.T m -> Rel.R n) : 
+    Rel.flat (Rel.rsum r (fun Vl => Rel.flat (fr Vl))) = Rel.flat (Rel.rsum r (fun Vl => fr Vl)).
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma flat_Rsingle n (v : Rel.T n) : Rel.flat (Rel.Rsingle v) = Rel.Rsingle v.
+  Proof.
+    apply Rel.p_ext; intros. rewrite Rel.p_flat.
+    destruct (Rel.T_dec _ v t).
+    + rewrite e. rewrite Rel.p_single. reflexivity.
+    + rewrite Rel.p_single_neq; intuition.
+  Qed.
+
+  Lemma sum_Rone_Rsingle n (f : Rel.T 0 -> Rel.T n) : Rel.sum Rel.Rone f = Rel.Rsingle (f (Vector.nil _)).
+  Proof. admit. Admitted.
 
 End Facts.

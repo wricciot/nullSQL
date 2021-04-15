@@ -899,3 +899,17 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     destruct x; intuition. contradiction H. reflexivity.
   Qed.
 
+  Lemma list_sum_O l : (forall x, List.In x l -> x = 0) -> list_sum l = O.
+  Proof.
+    elim l; eauto. intros; simpl. rewrite (H0 a). apply H. 
+    intros; apply H0. right; exact H1. left; reflexivity.
+  Qed.
+
+  Lemma list_sum_O' l : list_sum l = O -> forall x, List.In x l -> x = O.
+  Proof.
+    elim l.
+    simpl; intros; contradiction H0.
+    simpl; intros. destruct (plus_is_O _ _ H0). destruct H1; eauto.
+    rewrite <- H1. exact H2.
+  Qed.
+

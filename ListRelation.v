@@ -411,20 +411,6 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
         intro. rewrite H0 in Hfat. rewrite (proj2 (T_eqb_eq _ _ _) eq_refl) in Hfat. discriminate Hfat.
   Qed.
 
-  Lemma list_sum_O l : (forall x, List.In x l -> x = 0) -> list_sum l = O.
-  Proof.
-    elim l; eauto. intros; simpl. rewrite (H0 a). apply H. 
-    intros; apply H0. right; exact H1. left; reflexivity.
-  Qed.
-
-  Lemma list_sum_O' l : list_sum l = O -> forall x, List.In x l -> x = O.
-  Proof.
-    elim l.
-    simpl; intros; contradiction H0.
-    simpl; intros. destruct (plus_is_O _ _ H0). destruct H1; eauto.
-    rewrite <- H1. exact H2.
-  Qed.
-
   Lemma count_occ_list_rcomp {m} {n} l (f : T m -> list (T n)) :
     forall t,
     count_occ (OV.veq_dec n) (list_rcomp l f) t =

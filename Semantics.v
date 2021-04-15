@@ -66,16 +66,6 @@ Module SQLSemantics (Sem: SEM) (Sql : SQL).
     induction H; constructor; intuition.
   Qed.
 
-  (* alternate -- not stronger but easier -- version of sum *)
-
-  Axiom R_sum : forall m n, Rel.R m -> (Rel.T m -> Rel.R n) -> Rel.R n.
-  Implicit Arguments R_sum [m n].
-
-  (* singleton rel *)
-  Definition R_single {m} : Rel.T m -> Rel.R m :=
-    fun t => Rel.sum Rel.Rone (fun _ => t).
-
-
   (* NOTE: the ordering in the LATERAL list of lists grows dependencies left to right, while each of the 
      inner lists has the same ordering (right to left) as contexts *)
   Inductive j_q_sem (d : Db.D) : forall G (s : Scm), prequery -> (env G -> Rel.R (List.length s)) -> Prop := 
@@ -184,7 +174,11 @@ Module SQLSemantics (Sem: SEM) (Sql : SQL).
       j_btbl_sem d G (G1 ++ G0) (btb::btbl)
         (fun h =>
          let Rbtb := Sbtb h in
+         Rel.rsum Rbtb (fun Vl => cast _ _ e (Rel.times (Sbtbl (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h)) (Rel.Rsingle Vl))))
+(*
+         let Rbtb := Sbtb h in
          R_sum Rbtb (fun Vl => cast _ _ e (Rel.times (R_single Vl) (Sbtbl (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h)))))
+*)
 (*         let Rbtbl := Sbtbl h in
          R_sum Rbtbl (fun Vl => cast _ _ e (Rel.times (Sbtb (Evl.env_app _  _ (Evl.env_of_tuple _ Vl) h)) (R_single Vl))))
 *)

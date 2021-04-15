@@ -1,26 +1,42 @@
 (* Will have to be updated with changes to SQL semantics *)
 
 Require Import Eqdep Lists.List Lists.ListSet Vector Arith.PeanoNat Syntax AbstractRelation Bool.Sumbool Tribool 
-  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance Util RelFacts SemFacts Common.
+  Semantics JMeq FunctionalExtensionality Omega Coq.Init.Specif ProofIrrelevance Util RelFacts SemFacts Common Eval.
 
-Module RewriteRules (Db : DB) (Sql : SQL Db).
+Module RewriteRules (Sql : SQL).
   Import Db.
   Import Sql.
 
-  Module RF := RelFacts.Facts Db Sql.
-  Module SF := SemFacts.Facts Db.
+  Module RF := RelFacts.Facts Sql.
+  Module SF := SemFacts.Facts.
   Import RF.
   Import SF.
 
-  Module S2 := Sem2 Db.
-  Module S3 := Sem3 Db.
-  Module Ev := Evl Db Sql.
-  Module SQLSem2 := SQLSemantics Db S2 Sql Ev.
-  Module SQLSem3 := SQLSemantics Db S3 Sql Ev.
+  Module S2 := Sem2.
+  Module S3 := Sem3.
+  Module Ev := Evl.
+  Module SQLSem2 := SQLSemantics S2 Sql.
+  Module SQLSem3 := SQLSemantics S3 Sql.
 
   Definition tml_of_scm s n := List.map (fun a => tmvar (n,a)) s.
   Definition btm_of_tml (tml : list pretm) (al : list Name) := List.combine tml al.
   Definition btm_of_scm s al n := btm_of_tml (tml_of_scm s n) al.
+
+  Lemma j_nil_btbl_sem {d G G' Snil} {P : Prop} :
+    SQLSem3.j_btbl_sem d G G' List.nil Snil -> 
+    (forall (G0 G0': Ctx), G0 = G -> G0' = G' -> List.nil = G0' ->
+        (fun (_:Ev.env G) => Rel.Rone) ~= Snil -> P) -> P.
+  Proof.
+    intros.
+    enough (forall G0 G0' (btbl0 : list (list (pretb * Scm))) 
+      (Snil0 : Ev.env G0 -> Rel.R (list_sum (List.map (length (A:=Name)) G0'))), 
+        SQLSem3.j_btbl_sem d G0 G0' btbl0 Snil0 ->
+        G0 = G -> G0' = G' -> List.nil = btbl0 -> Snil0 ~= Snil -> P).
+    apply (H1 _ _ _ _ H eq_refl eq_refl eq_refl JMeq_refl).
+    intros G0 G0' btbl0 Snil0 H0'.
+    destruct H0'; intros. eapply H0; auto. rewrite H1 in H4. exact H4.
+    discriminate H4.
+  Qed.
 
 (*
   Derive Inversion j_nil_btb_sem with (forall d G G' Snil, SQLSem3.j_btb_sem d G G' List.nil Snil) Sort Prop.
@@ -121,6 +137,30 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
         * rewrite H10, H13. reflexivity.
   Qed.
 
+  Lemma j_commutative_join_btbl d G T1 T2 s1 s2 Ga Gb S1 S2 h :
+    forall ra rb (r1 : Rel.T (length s1)) (r2 : Rel.T (length s2)), 
+    ra ~= Vector.append r1 r2 -> rb ~= Vector.append r2 r1 ->
+    SQLSem3.j_btbl_sem d G Ga (((T1,s1)::(T2,s2)::List.nil)::List.nil) S1 ->
+    SQLSem3.j_btbl_sem d G Gb (((T2,s2)::(T1,s1)::List.nil)::List.nil) S2 ->
+      Rel.memb (S1 h) ra = Rel.memb (S2 h) rb.
+  Proof.
+    intros. 
+    inversion H1; subst. 
+    apply (existT_eq_elim H9); intros. apply (existT_eq_elim (JMeq_eq H4)); intros; subst. clear H7 H3 H4 H9 H1.
+    inversion H2; subst.
+    apply (existT_eq_elim H11); intros. apply (existT_eq_elim (JMeq_eq H3)); intros; subst. clear H7 H1 H3 H11 H2.
+    apply (j_nil_btbl_sem H10); intros; subst. rewrite <- H6. clear H4 H6 H10.
+    apply (j_nil_btbl_sem H12); intros; subst. rewrite <- H4. clear H4 H5 H12.
+    transitivity (Rel.memb (Sbtb h) ra).
+    + f_equal. apply JMeq_eq. apply rsum_id.
+      intros. apply cast_JMeq. apply Rel_Rone_times.
+    + transitivity (Rel.memb (Sbtb0 h) rb).
+      - eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H8 H9). Unshelve.
+        shelve. shelve. exact H. exact H0.
+      - f_equal. symmetry. apply JMeq_eq. apply rsum_id.
+        intros. apply cast_JMeq. apply Rel_Rone_times.
+  Qed.
+
   Fixpoint tmlist_of_ctx_i (G: Ctx) : nat -> list pretm := 
     fun i => match G with
     | List.nil => List.nil
@@ -133,10 +173,10 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
     f_equal. apply IHG.
   Qed.
 
-  Derive Inversion j_nil_sem with (forall G Snil, Ev.j_tml_sem0 G List.nil Snil) Sort Prop.
-  Derive Inversion j_cons_sem with (forall G hd tl Scons, Ev.j_tml_sem0 G (hd::tl) Scons) Sort Prop.
+  Derive Inversion j_nil_sem with (forall G Snil, SQLSem3.j_tml_sem0 G List.nil Snil) Sort Prop.
+  Derive Inversion j_cons_sem with (forall G hd tl Scons, SQLSem3.j_tml_sem0 G (hd::tl) Scons) Sort Prop.
 
-  Derive Inversion j_tmvar_sem with (forall G n a Svar, Ev.j_tm_sem0 G (tmvar (n,a)) Svar) Sort Prop.
+  Derive Inversion j_tmvar_sem with (forall G n a Svar, SQLSem3.j_tm_sem0 G (tmvar (n,a)) Svar) Sort Prop.
   Derive Inversion jfv_O_sem with (forall s G a Svar, Ev.j_fvar_sem (s::G) O a Svar) Sort Prop.
   Derive Inversion jfv_S_sem with (forall s G i a Svar, Ev.j_fvar_sem (s::G) (S i) a Svar) Sort Prop.
 
@@ -199,7 +239,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_tm_sem_env_app_subind a s1 s2 G1 G2 : 
     forall Stm,
-    Ev.j_tm_sem (G1 ++ (s1 ++ a :: s2) :: G2) (tmvar (length G1, a)) Stm ->
+    SQLSem3.j_tm_sem (G1 ++ (s1 ++ a :: s2) :: G2) (tmvar (length G1, a)) Stm ->
     forall (x : Rel.T (S (length s2))) (y : Rel.T (length s1)) e,
     forall h1 h2, Stm (Ev.env_app _ _ h1 (Ev.env_app ((s1++a::s2)::List.nil) G2 
         (Ev.env_of_tuple ((s1++a::s2)::List.nil) (cast _ _ e (Vector.append y x))) h2)) 
@@ -228,7 +268,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_tml_sem_env_app_subind s2 G1 G2 : 
     forall s1 Stml,
-    Ev.j_tml_sem (G1 ++ (s1 ++ s2) :: G2) (List.map (fun x1 => tmvar (length G1, x1)) s2) Stml ->
+    SQLSem3.j_tml_sem (G1 ++ (s1 ++ s2) :: G2) (List.map (fun x1 => tmvar (length G1, x1)) s2) Stml ->
     forall (x : Rel.T (length s2)) (y : Rel.T (length s1)) e,
     forall h1 h2, Stml (Ev.env_app _ _ h1 (Ev.env_app ((s1++s2)::List.nil) G2 
         (Ev.env_of_tuple ((s1++s2)::List.nil) (cast _ _ e (Vector.append y x))) h2)) 
@@ -250,7 +290,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
           apply JMeq_eq. apply cast_JMeq. symmetry. apply cast_JMeq. reflexivity.
         * apply map_length.
         * assert (exists Stml0' 
-            (H4': Ev.j_tml_sem0 (G1 ++ ((s1++(a::List.nil))++s2)::G2) (List.map (fun x1 => tmvar (length G1,x1)) s2) Stml0'),
+            (H4': SQLSem3.j_tml_sem0 (G1 ++ ((s1++(a::List.nil))++s2)::G2) (List.map (fun x1 => tmvar (length G1,x1)) s2) Stml0'),
             Stml0 ~= Stml0' /\ H4 ~= H4').
           rewrite <- app_assoc. exists Stml0. exists H4. intuition.
           destruct H6. destruct H6. destruct H6.
@@ -303,7 +343,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_tml_sem_env_app s G1 G2 :
     forall Stml,
-    Ev.j_tml_sem (G1 ++ s :: G2) (List.map (fun x1 => tmvar (length G1, x1)) s) Stml ->
+    SQLSem3.j_tml_sem (G1 ++ s :: G2) (List.map (fun x1 => tmvar (length G1, x1)) s) Stml ->
     forall (x : Rel.T (length s)) e,
     forall h1 h2, Stml (Ev.env_app _ _ h1 (Ev.env_app (s::List.nil) G2 
         (Ev.env_of_tuple (s::List.nil) (cast _ _ e x)) h2))
@@ -313,8 +353,8 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
   Qed.
 
   Lemma j_tml_sem_app G tml1 tml2 :
-    forall S, Ev.j_tml_sem G (tml1 ++ tml2) S ->
-    exists S1 S2, Ev.j_tml_sem G tml1 S1 /\ Ev.j_tml_sem G tml2 S2 /\ forall h, S h ~= append (S1 h) (S2 h).
+    forall S, SQLSem3.j_tml_sem G (tml1 ++ tml2) S ->
+    exists S1 S2, SQLSem3.j_tml_sem G tml1 S1 /\ SQLSem3.j_tml_sem G tml2 S2 /\ forall h, S h ~= append (S1 h) (S2 h).
   Proof.
     induction tml1; simpl; intuition.
     + exists (fun _ => Vector.nil _). exists S. intuition. constructor.
@@ -337,7 +377,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_tml_sem_flip s1 s2 G :
     forall Stml,
-    Ev.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0) Stml ->
+    SQLSem3.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0) Stml ->
     forall x (y : Rel.T (length s2 + length s1)) h, x ~= y -> 
       Stml (Ev.env_app (s2::s1::List.nil) G (Ev.env_of_tuple _ x) h) ~= flip y.
   Proof.
@@ -421,7 +461,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_tml_sem_env_app' G G2 :
     forall G1 Stml,
-    Ev.j_tml_sem (G1 ++ G ++ G2) (tmlist_of_ctx_i G (length G1)) Stml ->
+    SQLSem3.j_tml_sem (G1 ++ G ++ G2) (tmlist_of_ctx_i G (length G1)) Stml ->
     forall x h1 h2, Stml (Ev.env_app _ _ h1 (Ev.env_app _ _ (Ev.env_of_tuple _ x) h2)) ~= x.
   Proof.
     induction G; simpl; intuition.
@@ -461,7 +501,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
              Rel.T (length (tmlist_of_ctx_i G (length (G1++(a::List.nil)))))) x1).
             rewrite <- app_assoc. rewrite app_length. simpl. rewrite plus_comm. reflexivity.
             intros x1' Hx1'.
-          apply (cast_elim (Ev.j_tml_sem ((G1++(a::List.nil))++G++G2) (tmlist_of_ctx_i G (length (G1++a::List.nil))) x1') H1).
+          apply (cast_elim (SQLSem3.j_tml_sem ((G1++(a::List.nil))++G++G2) (tmlist_of_ctx_i G (length (G1++a::List.nil))) x1') H1).
             generalize dependent x1'. 
             rewrite <- app_assoc. rewrite app_length. simpl. rewrite plus_comm. intros. rewrite Hx1'. reflexivity.
           intros H1' H4. 
@@ -501,162 +541,191 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
 
   Lemma j_commutative_join d G T1 T2 s1 s2 sa sb S1 S2 h :
     length sb = length s1 + length s2 ->
-    SQLSem3.j_q_sem d G sa (SELECT * FROM ((T1,s1)::(T2,s2)::List.nil) WHERE TRUE) S1 ->
+    SQLSem3.j_q_sem d G sa (SELECT * FROM (((T1,s1)::(T2,s2)::List.nil)::List.nil) WHERE TRUE) S1 ->
     SQLSem3.j_q_sem d G sb
-      (SELECT (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb) FROM ((T2,s2)::(T1,s1)::List.nil) WHERE TRUE)
+      (SELECT (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb) FROM (((T2,s2)::(T1,s1)::List.nil)::List.nil) WHERE TRUE)
       S2 ->
     forall ra rb, ra ~= rb -> Rel.memb (S1 h) ra = Rel.memb (S2 h) rb.
   Proof.
-    intros Hlen H H0 ra rb H1. inversion H. subst. 
-    apply (existT_eq_elim H9); clear H9; intros _ H9.
-    apply (existT_eq_elim (JMeq_eq H9)); clear H9; intros _ HS1.
+    intros Hlen H H0 ra rb H1. inversion H. subst.
+    apply (existT_eq_elim H5); clear H5; intros _ H5.
+    apply (existT_eq_elim (JMeq_eq H5)); clear H5; intros _ HS1.
     inversion H0. subst.
-    apply (existT_eq_elim H14); clear H14; intros _ H14.
-    apply (existT_eq_elim (JMeq_eq H14)); clear H14; intros _ HS2.
+    apply (existT_eq_elim H11); clear H11; intros _ H11.
+    apply (existT_eq_elim (JMeq_eq H11)); clear H11; intros _ HS2.
     subst.
-    assert (HG2 : G2 = s2::s1::List.nil). eapply (j_btb_sem_ctx _ _ _ _ _ _ _ _ H9).
-    assert (e' : Rel.T (length (concat G1)) = Rel.T (length (tmlist_of_ctx G1))). 
-      rewrite Ev.length_tmlist, length_concat_list_sum. reflexivity.
-    transitivity (Rel.memb (Rel.sum (Rel.sel (Sbtb h)
+    inversion H12; subst.
+    apply (existT_eq_elim H11); clear H11; intros _ H11.
+    apply (existT_eq_elim (JMeq_eq H11)); clear H11; intros _ HSbtbl.
+    assert (HG2 : G3 = s2::s1::List.nil). eapply (j_btb_sem_ctx _ _ _ _ _ _ _ _ H7).
+    assert (e' : Rel.T (length (concat G1)) = Rel.T (length (tmlist_of_ctx G1))).
+      rewrite length_tmlist, length_concat_list_sum. reflexivity.
+    transitivity (Rel.memb (Rel.sum (Rel.sel (Sbtbl h)
         (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) G1)) =>
             S3.is_btrue (Sc (Ev.env_app G1 G (Ev.env_of_tuple G1 Vl) h))))
       (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) G1)) =>
          Stml (Ev.env_app G1 G (Ev.env_of_tuple G1 Vl) h))) (cast _ _ e' ra)).
-      apply eq_memb_dep. rewrite Ev.length_tmlist. reflexivity.
+      apply eq_memb_dep. rewrite length_tmlist. reflexivity.
       apply cast_JMeq. reflexivity.
       symmetry. apply cast_JMeq. reflexivity.
-      assert (eS2 : (fun _ : Ev.env G =>
-        Rel.R (length (List.map snd (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) (List.map snd tml))))) 
-        ~= (fun _ : Ev.env G => Rel.R (length (List.map snd tml)))). rewrite H13. reflexivity.
-      pose (HS2' := @f_JMequal _ _ _ _ eq_refl eS2 _ _ h h HS2 JMeq_refl). clearbody HS2'. simpl in HS2'.
-    assert (e'' : Rel.T (length (List.map snd tml)) 
-      = Rel.T (length (List.map fst (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) (List.map snd tml))))). 
-      rewrite H3, List.map_length in Hlen. do 2 rewrite List.map_length. rewrite Hlen, H3, Hlen. reflexivity.
+    assert (eS2 : (fun _ : Ev.env G =>
+        Rel.R (length (List.map snd (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb)))) 
+        ~= (fun _ : Ev.env G => Rel.R (length sb))). rewrite <- H15. reflexivity.
+(*
+    pose (HSbtbl' := @f_JMequal _ _ _ _ eq_refl eS2 _ _ h h HSbtbl JMeq_refl). clearbody HS2'. simpl in HS2'.
+*)
+    assert (length (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb) = length sb).
+      unfold btm_of_tml. rewrite length_combine.
+      unfold tml_of_scm. rewrite app_length, map_length, map_length, Hlen. reflexivity.
+      unfold tml_of_scm. rewrite app_length, map_length, map_length, Hlen. reflexivity.
+    assert (e'' : Rel.T (length sb) 
+      = Rel.T (length (List.map fst (btm_of_tml (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb)))).
+      rewrite map_length, H2. reflexivity.
     transitivity (Rel.memb (Rel.sum
-            (Rel.sel (Sbtb0 h)
-               (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) G2)) =>
-                S3.is_btrue (Sc0 (Ev.env_app G2 G (Ev.env_of_tuple G2 Vl) h))))
-            (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) G2)) =>
-             Stml1 (Ev.env_app G2 G (Ev.env_of_tuple G2 Vl) h))) (cast _ _ e'' rb)).
-      Focus 2. apply eq_memb_dep. rewrite <- H3. do 2 rewrite List.map_length. reflexivity.
-      eapply (JMeq_trans _ HS2'). Unshelve.
-      apply cast_JMeq. reflexivity.
+            (Rel.sel (Sbtbl0 h)
+               (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) (G4 ++ G3))) =>
+                S3.is_btrue (Sc0 (Ev.env_app (G4 ++ G3) G (Ev.env_of_tuple (G4 ++ G3) Vl) h))))
+            (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) (G4 ++ G3))) =>
+             Stml0 (Ev.env_app (G4 ++ G3) G (Ev.env_of_tuple (G4 ++ G3) Vl) h))) (cast _ _ e'' rb)).
+    2: {
+      apply eq_memb_dep. rewrite List.map_length. exact H2.
       symmetry. apply cast_JMeq. reflexivity.
+      apply cast_JMeq. reflexivity.
+    }
+    apply (j_nil_btbl_sem H16); intros; subst. clear H6.
     (* get rid of trivial true conditions *)
-    rewrite sel_true. Focus 2. intros. inversion H10. rewrite <- (existT_projT2_eq _ _ _ H5). reflexivity.
-    rewrite sel_true. Focus 2. intros. inversion H15. rewrite <- (existT_projT2_eq _ _ _ H5). reflexivity.
+    rewrite sel_true. 2: { intros. inversion H9. rewrite <- (existT_projT2_eq _ _ _ H5). reflexivity. }
+    rewrite sel_true. 2: { intros. inversion H13. rewrite <- (existT_projT2_eq _ _ _ H5). reflexivity. }
     (* clear context *)
-    clear Sc Sc0 H10 H15 H HS2 HS2' eS2 H0 e1 H7.
+    clear Sc Sc0 H9 H13 H eS2 H0.
     (* simplify lhs *)
-    apply (eq_memb_dep_elim1 (fun x => x = _) _ _ (Rel.sum (Sbtb h) (fun Vl => Vl))).
-      rewrite Ev.length_tmlist, length_concat_list_sum. reflexivity.
-      apply sum_ext_dep; auto. 
-      rewrite Ev.length_tmlist, length_concat_list_sum. reflexivity.
+    apply (eq_memb_dep_elim1 (fun x => x = _) _ _ (Rel.sum (Sbtbl h) (fun Vl => Vl))).
+      rewrite length_tmlist, length_concat_list_sum. reflexivity.
+      apply sum_ext_dep; auto.
+      rewrite length_tmlist, length_concat_list_sum. reflexivity.
       intros. apply (JMeq_trans H). symmetry.
-    generalize dependent Stml. rewrite tmlist_of_ctx_O.
-    intros.
-    eapply (JMeq_trans _ (j_tml_sem_env_app' _ _ List.nil _ H11 _ (Ev.env_of_list List.nil List.nil eq_refl) h)).
-    Unshelve. Focus 2.
-      eapply (f_JMeq _ _ Stml). apply Ev.env_eq. rewrite projT1_env_app.
-      rewrite (@projT1_env_app List.nil (G1++G)). rewrite projT1_env_app. reflexivity.
+      generalize dependent Stml. rewrite tmlist_of_ctx_O.
+      intros.
+      eapply (JMeq_trans _ (j_tml_sem_env_app' _ _ List.nil _ H10 _ (Ev.env_of_list List.nil List.nil eq_refl) h)).
+      Unshelve. 2: {
+        eapply (f_JMeq _ _ Stml). apply Ev.env_eq. rewrite projT1_env_app.
+        rewrite (@projT1_env_app List.nil (G1++G)). rewrite projT1_env_app. reflexivity.
+      }
     intros. assert (Hr1 : r1 ~= ra). apply (JMeq_trans H). apply cast_JMeq. reflexivity. clear H.
     (* simplify rhs *)
     apply (cast_elim (Rel.T (length s1 + length s2)) rb).
       f_equal. exact Hlen.
       intros r2 Hr2.
-    apply (cast_elim (Rel.R (length s2 + length s1)) (Sbtb0 h)).
-      rewrite HG2. simpl. f_equal. omega.
+    apply (cast_elim (Rel.R (length s2 + length s1)) (Sbtb h)).
+      rewrite <- length_concat_list_sum. simpl. do 2 rewrite app_length. f_equal.
+      simpl; omega.
       intros R2 HR2.
     transitivity (Rel.memb (Rel.sum R2 flip) r2).
-      Focus 2. apply eq_memb_dep.
-      rewrite <- H3, <- Hlen. do 2 rewrite List.map_length. reflexivity.
+    2: { 
+      apply eq_memb_dep.
+      rewrite <- Hlen, map_length, H2. reflexivity.
       apply sum_ext_dep.
-      rewrite HG2. simpl. omega.
-      rewrite <- H3, <- Hlen. do 2 rewrite List.map_length. reflexivity.
-      symmetry. exact HR2.
+      rewrite <- length_concat_list_sum. simpl. do 2 rewrite app_length. simpl. omega.
+      rewrite <- Hlen, H15. do 2 rewrite map_length. rewrite <- H15. reflexivity.
+      rewrite <- H11. rewrite rsum_id. symmetry; exact HR2.
+      intros. apply cast_JMeq. apply Rel_Rone_times.
       intros. symmetry. 
-      apply (cast_elim (Ev.env (s2::s1::G) -> Rel.T (length (tml_of_scm s1 1 ++ tml_of_scm s2 0))) Stml1).
-        rewrite List.app_length. unfold tml_of_scm. repeat rewrite List.map_length. 
-        unfold tml_of_scm in H3. rewrite <- H3. rewrite <- Hlen. rewrite List.map_length.
-        rewrite HG2. reflexivity.
+      apply (cast_elim (Ev.env (s2::s1::G) -> Rel.T (length (tml_of_scm s1 1 ++ tml_of_scm s2 0))) Stml0).
+        rewrite List.app_length. rewrite List.map_length. rewrite H2. 
+        unfold tml_of_scm. repeat rewrite List.map_length. rewrite Hlen. reflexivity.
       intros Stml1' HStml1'.
-      apply (cast_elim (Ev.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0) Stml1') H16).
-        unfold btm_of_tml. apply JMeq_eq. 
+      apply (cast_elim (SQLSem3.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0) Stml1') H14).
+        unfold btm_of_tml. apply JMeq_eq.
         eapply (@f_JMequal _ (fun _ => Type) _ (fun _ => Type) _ _ 
-                 (Ev.j_tml_sem (G2++G) (List.map fst (combine (tml_of_scm s1 1 ++ tml_of_scm s2 0) (List.map snd tml))))
-                 (Ev.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0)) _ _ _ HStml1'). Unshelve.
-        Focus 3. rewrite HG2. simpl. rewrite H3. rewrite List.map_length.
-        rewrite H13. erewrite length_combine. reflexivity.
-        unfold tml_of_scm. rewrite List.app_length. do 2 rewrite List.map_length. symmetry. exact Hlen.
-      intros H16' _. 
-      eapply (JMeq_trans _ (j_tml_sem_flip _ _ _ _ H16' _ _ _ _)). Unshelve.
+                 (SQLSem3.j_tml_sem ((Datatypes.nil ++ s2 :: s1 :: Datatypes.nil) ++ G) (List.map fst (combine (tml_of_scm s1 1 ++ tml_of_scm s2 0) sb)))
+                 (SQLSem3.j_tml_sem (s2::s1::G) (tml_of_scm s1 1 ++ tml_of_scm s2 0)) _ _ _ HStml1'). Unshelve.
+        3: { 
+          simpl. rewrite map_fst_combine. reflexivity. 
+          unfold tml_of_scm. rewrite List.app_length. do 2 rewrite List.map_length. symmetry. exact Hlen.
+        }
+        3: {
+          apply funext_JMeq. rewrite map_length. rewrite length_combine. reflexivity.
+          unfold tml_of_scm. rewrite app_length. do 2 rewrite map_length. symmetry; exact Hlen.
+          reflexivity.
+          intros. reflexivity.
+        }
+        3: { 
+          simpl. rewrite map_fst_combine. reflexivity. 
+          unfold tml_of_scm. rewrite app_length. do 2 rewrite map_length. symmetry; exact Hlen.
+        }
+      intros H14' _.
+      eapply (JMeq_trans _ (j_tml_sem_flip _ _ _ _ H14' _ _ _ _)). Unshelve.
+      3: { exact y. }
+      3: { exact h. }
+      3: { symmetry; exact H. }
       + symmetry. apply cast_JMeq. exact Hr2.
-      + do 2 rewrite Rel.p_sum.
-        apply (filter_supp_elim _ (Sbtb h) r1); intro;
-        apply (filter_supp_elim' _ _ R2 r2 (fun l => _ = list_sum (List.map _ l))); intro; simpl.
-        - f_equal. apply (cast_elim (Rel.T (list_sum (List.map (@length _) G2))) (flip r2)).
-          rewrite HG2. simpl. unfold Rel.T. f_equal. omega.
-          intros fr2 Hfr2. 
-          eapply (eq_trans (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ 
-            fr2 (fst (split r2)) (snd (split r2)) _ _ H8 H9)). Unshelve.
-          apply eq_memb_dep.
-          rewrite HG2. simpl. omega.
-          exact HR2. symmetry. exact Hfr2.
+      + generalize dependent Stml0.
+        rewrite map_fst_combine. intros. rewrite (SQLSem3.j_tml_sem_fun _ _ _ H14' _ H14).
+        reflexivity.
+        unfold tml_of_scm. rewrite app_length. do 2 rewrite map_length. symmetry; exact Hlen.
+    }
+    do 2 rewrite Rel.p_sum.
+    apply (filter_supp_elim _ (Sbtbl h) r1); intro;
+    apply (filter_supp_elim' _ _ R2 r2 (fun l => _ = list_sum (List.map _ l))); intro; simpl.
+    + f_equal. apply (cast_elim (Rel.T (list_sum (List.map (length (A:=Name)) (s2 :: s1 :: List.nil)))) (flip r2)).
+      unfold Rel.T. f_equal. simpl. omega.
+      intros fr2 Hfr2.
+      eapply (eq_trans (j_commutative_join_btbl _ _ _ _ _ _ _ _ _ _ _ _ 
+        fr2 (fst (split r2)) (snd (split r2)) _ _ H8 H12)). Unshelve.
+      apply eq_memb_dep.
+          simpl; omega.
+          eapply (trans_JMeq (rsum_id _ _ _ _ _)). Unshelve. exact HR2.
+          symmetry; exact Hfr2.
           apply (split_ind r2 (fun m n p => r1 ~= append (fst p) (snd p))). intros. simpl.
-          rewrite <- H2. apply (JMeq_trans Hr1). apply (JMeq_trans H1). exact Hr2.
+          rewrite <- H3. apply (JMeq_trans Hr1). apply (JMeq_trans H1). exact Hr2.
           rewrite <- Hfr2. unfold flip.
           apply (split_ind r2 (fun m n p => (let (v1,v2) := p in append v2 v1) ~= append (snd p) (fst p))). 
           intros. simpl. reflexivity.
-        - enough (Rel.memb (Sbtb h) r1 > 0).
-          replace (Rel.memb (Sbtb h) r1) with (Rel.memb R2 (flip r2)) in H2.
-          exfalso. apply H0. apply Rel.p_fs. exact H2.
-          enough (exists (rc : Rel.T (length s1)) (rd : Rel.T (length s2)), r2 ~= append rc rd /\ flip r2 ~= append rd rc).
-          decompose record H4. rewrite H7.
-          enough (Rel.T (length s2 + length s1) = Rel.T (list_sum (List.map (length (A:=Name)) G2))).
-          transitivity (Rel.memb (Sbtb0 h) (cast _ _ H6 (append x0 x))).
-          apply eq_memb_dep. rewrite HG2. simpl. omega.
-          symmetry. exact HR2. symmetry. apply cast_JMeq. reflexivity.
-          eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H9 H8). Unshelve.
-          rewrite HG2. f_equal. simpl. omega.
-          unfold flip. 
-          apply (split_ind r2 (fun m n p => exists rc rd, r2 ~= append rc rd /\ (let (v1,v2) := p in append v2 v1) ~= append rd rc)).
-          intros. exists v1. exists v2. split; apply eq_JMeq; intuition.
-          apply (Rel.p_fs_r _ _ _ H). Focus 3. apply cast_JMeq. reflexivity.
-          apply (JMeq_trans Hr1). apply (JMeq_trans H1). apply (JMeq_trans Hr2). exact H5.
-        - enough (Rel.memb R2 (flip r2) > 0).
-          replace (Rel.memb R2 (flip r2)) with (Rel.memb (Sbtb h) r1) in H2.
-          exfalso. apply H. apply Rel.p_fs. exact H2. 
-          symmetry.
-          enough (exists (rc : Rel.T (length s1)) (rd : Rel.T (length s2)), r2 ~= append rc rd /\ flip r2 ~= append rd rc).
-          decompose record H4. rewrite H7.
-          enough (Rel.T (length s2 + length s1) = Rel.T (list_sum (List.map (length (A:=Name)) G2))).
-          transitivity (Rel.memb (Sbtb0 h) (cast _ _ H6 (append x0 x))).
-          apply eq_memb_dep. rewrite HG2. simpl. omega.
-          symmetry. exact HR2. symmetry. apply cast_JMeq. reflexivity.
-          eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H9 H8). Unshelve.
-          f_equal. rewrite HG2. simpl. omega.
-          unfold flip. 
-          apply (split_ind r2 (fun m n p => exists rc rd, r2 ~= append rc rd /\ (let (v1,v2) := p in append v2 v1) ~= append rd rc)).
-          intros. exists v1. exists v2. split; apply eq_JMeq; intuition.
-          apply (Rel.p_fs_r _ _ _ H0). Focus 3. apply cast_JMeq. reflexivity.
-          apply (JMeq_trans Hr1). apply (JMeq_trans H1). apply (JMeq_trans Hr2). exact H5.
-        - reflexivity.
-      + rewrite HG2. simpl. rewrite List.map_length. erewrite length_combine. reflexivity.
-        rewrite List.app_length. unfold tml_of_scm. do 2 rewrite List.map_length. symmetry. exact Hlen.
-      + rewrite HG2. simpl. erewrite map_fst_combine. reflexivity. 
-        rewrite List.app_length. unfold tml_of_scm. do 2 rewrite List.map_length. symmetry. exact Hlen.
-      + enough (forall (eG2: Rel.T (list_sum (List.map (length (A:=Name)) G2)) = 
-                             Rel.T (list_sum (List.map (length (A:=Name)) (s2::s1::List.nil)))), 
-          Stml1 (Ev.env_app G2 G (Ev.env_of_tuple G2 y) h) ~=
-          Stml1' (Ev.env_app (s2 :: s1 :: Datatypes.nil) G 
-            (Ev.env_of_tuple (s2 :: s1 :: Datatypes.nil) (cast _ _ eG2 y)) h)).
-        apply H0. generalize dependent y. generalize dependent Stml1. rewrite HG2.
-        intros. eapply (f_JMequal Stml1 Stml1'). Unshelve. exact HStml1'.
-        apply eq_JMeq. f_equal. f_equal. symmetry. apply JMeq_eq. apply cast_JMeq. reflexivity.
-        rewrite HG2. reflexivity. reflexivity.
-        simpl. unfold btm_of_tml. rewrite map_fst_combine. reflexivity.
-        rewrite app_length. unfold tml_of_scm. do 2 rewrite List.map_length. symmetry. exact Hlen.
-      + apply cast_JMeq. symmetry. exact H.
+          simpl; intro; apply cast_JMeq. rewrite <- H11. apply Rel_Rone_times.
+    + enough (Rel.memb (Sbtbl h) r1 > 0).
+      replace (Rel.memb (Sbtbl h) r1) with (Rel.memb R2 (flip r2)) in H3.
+      exfalso. apply H0. apply Rel.p_fs. exact H3.
+      enough (exists (rc : Rel.T (length s1)) (rd : Rel.T (length s2)), r2 ~= append rc rd /\ flip r2 ~= append rd rc).
+      decompose record H4. rewrite H9.
+      enough (Rel.T (length s2 + length s1) = Rel.T (length s2 + (length s1 + 0))).
+      transitivity (Rel.memb (Sbtb h) (cast _ _ H6 (append x0 x))).
+      apply eq_memb_dep. simpl; omega.
+      symmetry. exact HR2. symmetry. apply cast_JMeq. reflexivity.
+      inversion H8. apply (existT_eq_elim H22); intros; clear H22 H24.
+      apply (existT_eq_elim (JMeq_eq H25)); intros; subst. clear H20 H25 H22.
+      rewrite <- H24. apply (j_nil_btbl_sem H23); intros; subst. rewrite <- H17.
+      transitivity (Rel.memb (Sbtb0 h) r1). 
+      eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H7 H21). Unshelve.
+      f_equal. symmetry; apply JMeq_eq; apply rsum_id. intro; apply cast_JMeq. apply Rel_Rone_times.
+      f_equal; omega.
+      exists (fst (split r2)); exists (snd (split r2)); split.
+      apply (split_ind r2); simpl; intros. rewrite H4; reflexivity.
+      unfold flip. apply (split_ind r2); simpl; intros. reflexivity.
+      apply (Rel.p_fs_r _ _ _ H). 3: { apply cast_JMeq. reflexivity. }
+      apply (JMeq_trans Hr1). apply (JMeq_trans H1). apply (JMeq_trans Hr2). reflexivity.
+    + enough (Rel.memb R2 (flip r2) > 0).
+      replace (Rel.memb R2 (flip r2)) with (Rel.memb (Sbtbl h) r1) in H3.
+      exfalso. apply H. apply Rel.p_fs. exact H3.
+      symmetry.
+      enough (exists (rc : Rel.T (length s1)) (rd : Rel.T (length s2)), r2 ~= append rc rd /\ flip r2 ~= append rd rc).
+      decompose record H4. rewrite H9.
+      enough (Rel.T (length s2 + length s1) = Rel.T (length s2 + (length s1 + 0))).
+      inversion H8. apply (existT_eq_elim H22); intros; clear H22 H24.
+      apply (existT_eq_elim (JMeq_eq H25)); intros; subst. clear H20 H25 H22.
+      rewrite <- H24. apply (j_nil_btbl_sem H23); intros; subst. rewrite <- H17.
+      transitivity (Rel.memb (Sbtb h) (cast _ _ H6 (append x0 x))).
+      apply eq_memb_dep. simpl. omega.
+      symmetry. exact HR2. symmetry. apply cast_JMeq. reflexivity.
+      transitivity (Rel.memb (Sbtb0 h) r1).
+      eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H7 H21). Unshelve.
+      f_equal. symmetry. apply JMeq_eq. apply rsum_id. intro. apply cast_JMeq. apply Rel_Rone_times.
+      f_equal. omega.
+      exists (fst (split r2)); exists (snd (split r2)); split.
+      apply (split_ind r2); simpl; intros. rewrite H4; reflexivity.
+      unfold flip. apply (split_ind r2); simpl; intros. reflexivity.
+      apply (Rel.p_fs_r _ _ _ H0). 3: { apply cast_JMeq. reflexivity. }
+      apply (JMeq_trans Hr1). apply (JMeq_trans H1). apply (JMeq_trans Hr2). reflexivity.
+    + reflexivity.
   Qed.
 
   Fixpoint var_subst (a : FullVar) (n : nat) (btm : list (pretm * Name)) :=
@@ -713,14 +782,14 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
       - apply H1. intro. contradiction H2. intuition.
   Qed.
 
-  Lemma j_tml_sem_append G t l1 l2 Sl : Ev.j_tml_sem G (l1 ++ t :: l2) Sl ->
+  Lemma j_tml_sem_append G t l1 l2 Sl : SQLSem3.j_tml_sem G (l1 ++ t :: l2) Sl ->
     forall h (v1 : Rel.T (length l1)) (v2 : Rel.T (S (length l2))) St, 
-      Sl h ~= append v1 v2 -> Ev.j_tm_sem G t St -> St h ~= hd v2.
+      Sl h ~= append v1 v2 -> SQLSem3.j_tm_sem G t St -> St h ~= hd v2.
   Proof.
     induction l1; intros.
     + simpl in H. inversion H. apply (existT_eq_elim H5); simpl; intros.
       rewrite <- H8 in H0. enough (cons _ (St0 h) _ (Stml h) ~= v2).
-      rewrite <- H9. simpl. replace St0 with St. reflexivity. apply (Ev.j_tm_sem_fun _ _ _ H1 _ H4).
+      rewrite <- H9. simpl. replace St0 with St. reflexivity. apply (SQLSem3.j_tm_sem_fun _ _ _ H1 _ H4).
       apply (JMeq_trans H0). eapply (case0 (fun v0 => append v0 v2 ~= v2) _ v1). Unshelve. reflexivity.
     + simpl in H. inversion H. apply (existT_eq_elim H5); simpl; intros. clear H5 H7.
       rewrite <- H8 in H0. eapply (IHl1 _ H6 h (tl v1) v2 _ _ H1). Unshelve.
@@ -729,9 +798,9 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
   Qed.
 
   Lemma unnest_tm G s1 s2 t1 tml2 St1 Stml2 St0 Vl h (Hlen : length s1 = length tml2) :
-    Ev.j_tm_sem (s1::G) t1 St1 ->
-    Ev.j_tml_sem (s2::G) tml2 Stml2 ->
-    Ev.j_tm_sem (s2::G) (tm_subst t1 0 (List.combine tml2 s1)) St0 ->
+    SQLSem3.j_tm_sem (s1::G) t1 St1 ->
+    SQLSem3.j_tml_sem (s2::G) tml2 Stml2 ->
+    SQLSem3.j_tm_sem (s2::G) (tm_subst t1 0 (List.combine tml2 s1)) St0 ->
     forall Stml2', Stml2 ~= Stml2' ->
     St1 (Ev.env_app (s1::List.nil) _
       (Ev.env_of_tuple _ (Stml2' (Ev.env_app (s2::List.nil) G (Ev.env_of_tuple _ Vl) h)))
@@ -781,7 +850,7 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
         rewrite <- Hlen. rewrite H5. rewrite app_length. simpl. omega.
         simpl. rewrite app_length. f_equal. simpl. omega.
         apply exists_vector_append. rewrite H5. simpl. rewrite app_length. simpl. omega.
-        apply j_var_append. apply (Ev.j_var_sem_j_var _ _ _ H8).
+        apply j_var_append. apply (SQLSem3.j_var_sem_j_var _ _ _ H8).
         rewrite H5. reflexivity.
         rewrite H5. reflexivity.
         reflexivity.
@@ -797,9 +866,9 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
   Qed.
 
   Lemma unnest_tml G s1 s2 tml1 tml2 Stml1 Stml2 Stml0 Vl h (Hlen : length s1 = length tml2) :
-    Ev.j_tml_sem (s1::G) tml1 Stml1 ->
-    Ev.j_tml_sem (s2::G) tml2 Stml2 ->
-    Ev.j_tml_sem (s2::G) (tml_subst_scm tml1 0 tml2 s1) Stml0 ->
+    SQLSem3.j_tml_sem (s1::G) tml1 Stml1 ->
+    SQLSem3.j_tml_sem (s2::G) tml2 Stml2 ->
+    SQLSem3.j_tml_sem (s2::G) (tml_subst_scm tml1 0 tml2 s1) Stml0 ->
     forall Stml2', Stml2 ~= Stml2' ->
     Stml1 (Ev.env_app (s1::List.nil) _
       (Ev.env_of_tuple _ (Stml2' (Ev.env_app (s2::List.nil) G (Ev.env_of_tuple _ Vl) h)))
@@ -837,110 +906,108 @@ Module RewriteRules (Db : DB) (Sql : SQL Db).
   Lemma select_unnest d G sa sb btm1 btm2 btb s1 s2 c2 Sa Sb h:
     SQLSem3.j_q_sem d G sa 
      (SELECT btm1 
-      FROM ((tbquery (SELECT btm2 FROM ((btb,s2)::List.nil) WHERE c2), s1)::List.nil) 
+      FROM (((tbquery (SELECT btm2 FROM (((btb,s2)::List.nil)::List.nil) WHERE c2), s1)::List.nil)::List.nil) 
       WHERE TRUE) Sa ->
     SQLSem3.j_q_sem d G sb 
      (SELECT (btm_subst_scm btm1 0 (List.map fst btm2) s1) 
-      FROM ((btb,s2)::List.nil) 
+      FROM (((btb,s2)::List.nil)::List.nil)
       WHERE c2) Sb ->
     Sa h ~= Sb h.
   Proof.
-    intros. inversion H. subst. 
-    apply (existT_eq_elim H9); clear H9; intros _ H9.
-    apply (existT_eq_elim (JMeq_eq H9)); clear H9; intros _ HSa.
-    inversion H0. subst.
-    apply (existT_eq_elim H13); clear H13; intros _ H13.
-    apply (existT_eq_elim (JMeq_eq H13)); clear H13; intros _ HSb.
-    subst. apply cast_JMeq. symmetry. apply cast_JMeq.
-    inversion H7. apply (existT_eq_elim H16); clear H16; intros _ H16. 
-    apply (existT_eq_elim (JMeq_eq H16)); clear H16; intros; subst. rewrite <- H19.
-    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H17). Unshelve. intros. subst. rewrite <- H4.
-    inversion H6. apply (existT_eq_elim H22); clear H22; intros _ H22.
-    apply (existT_eq_elim (JMeq_eq H22)); clear H22; intros. subst.
-    inversion H10. apply (existT_eq_elim H2); clear H2; intros _ H2. rewrite <- H2.
-    inversion H21. apply (existT_eq_elim H19); clear H19; intros _ H19.
-    apply (existT_eq_elim (JMeq_eq H19)); clear H19; intros. subst.
-    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H23). Unshelve. intros. subst. rewrite <- H4.
-    inversion H26. apply (existT_eq_elim H30); clear H30; intros _ H30.
-    apply (existT_eq_elim (JMeq_eq H30)); clear H30; intros. subst. rewrite <- H33.
-    inversion H27. apply (existT_eq_elim H34); clear H34; intros _ H34. 
-    apply (existT_eq_elim (JMeq_eq H34)); clear H34; intros; subst. rewrite <- H37.
-    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H35). Unshelve. intros. subst. rewrite <- H4.
+    intros. inversion H; subst; clear H.
+    apply (existT_eq_elim H7); clear H7; intros _ H7.
+    apply (existT_eq_elim (JMeq_eq H7)); clear H7; intros _ HSa. rewrite <- HSa; clear Sa HSa.
+    inversion H8; subst; clear H4 H8.
+    apply (existT_eq_elim H6); clear H6; intros _ H6.
+    apply (existT_eq_elim (JMeq_eq H6)); intros _ HSbtbl; clear H6. rewrite <- HSbtbl; clear Sbtbl HSbtbl.
+    apply (j_nil_btbl_sem H7); intros; subst. rewrite <- H3. clear Sbtbl0 H3 H7.
+    inversion H5; subst; clear H5 H6.
+    apply (existT_eq_elim H8); clear H8; intros _ H8.
+    apply (existT_eq_elim (JMeq_eq H8)); intros _ HSbtb; clear H8. rewrite <- HSbtb; clear Sbtb HSbtb.
+    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H11). Unshelve. intros; subst. rewrite <- H3; clear Sbtb0 H3 H11.
+    inversion H7; subst; clear H7.
+    apply (existT_eq_elim H3); clear H3; intros _ H3.
+    apply (existT_eq_elim (JMeq_eq H3)); intros _ HST; clear H3. rewrite <- HST; clear ST HST.
+    inversion H4; subst; clear H4.
+    apply (existT_eq_elim H7); clear H7; intros _ H7.
+    apply (existT_eq_elim (JMeq_eq H7)); intros _ Hh0; clear H7. rewrite <- Hh0; clear h0 Hh0.
+    inversion H8; subst; clear H4 H8.
+    apply (existT_eq_elim H6); clear H6; intros _ H6.
+    apply (existT_eq_elim (JMeq_eq H6)); intros _ HSbtbl; clear H6. rewrite <- HSbtbl; clear Sbtbl HSbtbl.
+    apply (j_nil_btbl_sem H7); intros; subst. rewrite <- H3. clear Sbtbl0 H3 H7.
+    inversion H5; subst; clear H5.
+    apply (existT_eq_elim H8); clear H6 H8; intros _ H8.
+    apply (existT_eq_elim (JMeq_eq H8)); intros _ HSbtb; clear H8. rewrite <- HSbtb; clear Sbtb HSbtb.
+    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H14). Unshelve. intros; subst. rewrite <- H3; clear Sbtb0 H3 H14.
+
+    inversion H0; subst; clear H0.
+    apply (existT_eq_elim H6); clear H6; intros _ H6.
+    apply (existT_eq_elim (JMeq_eq H6)); clear H6; intros _ HSb. rewrite <- HSb; clear Sb HSb.
+    inversion H8; subst; clear H3 H8.
+    apply (existT_eq_elim H5); clear H5; intros _ H5.
+    apply (existT_eq_elim (JMeq_eq H5)); clear H5; intros _ HSbtbl. rewrite <- HSbtbl; clear Sbtbl HSbtbl.
+    apply (j_nil_btbl_sem H6); intros; subst. rewrite <- H2. clear Sbtbl0 H2 H6.
+    inversion H4; subst. clear H4 H5.
+    apply (existT_eq_elim H8); clear H8; intros _ H8.
+    apply (existT_eq_elim (JMeq_eq H8)); clear H8; intros _ HSbtb. rewrite <- HSbtb; clear Sbtb HSbtb.
+    eapply (SQLSem3.j_nil_btb_sem _ _ _ _ _ _ H17). Unshelve. intros; subst. rewrite <- H2. clear Sbtb0 H2 H17.
+
+    destruct (SQLSem3.jT_sem_fun_dep _ _ _ _ _ H7 _ _ _ _ eq_refl eq_refl H6); subst. 
+    rewrite <- H0. clear ST0 H6 H0.
+
+    apply cast_JMeq. symmetry. apply cast_JMeq. symmetry.
     apply (cast_elim (Rel.R (list_sum (List.map (length (A:=Name)) (s2 :: Datatypes.nil)))) (ST h)).
       rewrite H18. simpl. f_equal. omega.
-    intros RT HRT. apply (@JMeq_trans _ _ _ _ 
-      (Rel.sum (Rel.sel RT (fun Vl => 
-        S3.is_btrue (Sc0 (Ev.env_app _ _ (Ev.env_of_tuple (s2::List.nil) Vl) h))))
-       (fun Vl => Stml0 (Ev.env_app _ _ (Ev.env_of_tuple (s2::List.nil) Vl) h)))).
-    + eapply (f_JMequal (Rel.sum _) (Rel.sum _)). Unshelve.
-      eapply (f_JMequal (@Rel.sum _ _) (@Rel.sum _ _)). Unshelve.
-      reflexivity.
-      eapply (f_JMequal (Rel.sel _) (Rel.sel _)). Unshelve.
-      eapply (f_JMequal (@Rel.sel _) (@Rel.sel _)). Unshelve.
-      reflexivity. apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)). exact HRT.
-      reflexivity. reflexivity. reflexivity. reflexivity.
-      reflexivity. reflexivity. reflexivity. reflexivity.
-      reflexivity. reflexivity.
-    + apply (cast_elim (Ev.env (s2 :: G) -> Rel.T (list_sum (List.map (length (A:=Name)) (s1 :: Datatypes.nil)))) Stml1).
-        rewrite map_length in H24. rewrite map_length. rewrite H24. simpl. rewrite plus_0_r. reflexivity.
-      intros Stml1' HStml1.
-      apply (@JMeq_trans _ _ _ _
-        (Rel.sum (Rel.sum (Rel.sel RT (fun Vl =>
-                     S3.is_btrue (Sc (Ev.env_app (s2 :: List.nil) G (Ev.env_of_tuple (s2 :: List.nil) Vl) h))))
-                 (fun Vl => Stml1' (Ev.env_app (s2 :: List.nil) G (Ev.env_of_tuple (s2 :: List.nil) Vl) h)))
-          (fun Vl => Stml (Ev.env_app (s1 :: List.nil) G (Ev.env_of_tuple (s1 :: List.nil) Vl) h)))).
-      Focus 2. eapply (f_JMequal (Rel.sum _) (Rel.sum _)); try auto. Unshelve.
-      eapply (f_JMequal (@Rel.sum _ _) (@Rel.sum _ _)); try auto. Unshelve.
-      apply (@JMeq_trans _ _ _ _
-        (cast (Rel.R (length (List.map snd btm2) + list_sum (List.map (length (A:=Name)) Datatypes.nil)))
-          (Rel.R (length s1 + list_sum (List.map (length (A:=Name)) Datatypes.nil))) e2
-          (Rel.times
-            (cast (Rel.R (length (List.map fst btm2))) (Rel.R (length (List.map snd btm2))) e3
-              (Rel.sum
-                (Rel.sel
-                 (cast (Rel.R (length s0 + list_sum (List.map (length (A:=Name)) Datatypes.nil)))
-                    (Rel.R (length s2 + list_sum (List.map (length (A:=Name)) Datatypes.nil))) e4
-                    (Rel.times (ST1 h) Rel.Rone))
-                 (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) (s2 :: Datatypes.nil))) =>
-                  S3.is_btrue (Sc (Ev.env_app (s2 :: Datatypes.nil) G (Ev.env_of_tuple (s2 :: Datatypes.nil) Vl) h))))
-              (fun Vl : Rel.T (list_sum (List.map (length (A:=Name)) (s2 :: Datatypes.nil))) =>
-               Stml1 (Ev.env_app (s2 :: Datatypes.nil) G (Ev.env_of_tuple (s2 :: Datatypes.nil) Vl) h)))) Rel.Rone))).
-      symmetry. apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)). apply cast_JMeq.
-      apply eq_sum_dep. reflexivity. simpl. rewrite <- H24, Nat.add_0_r. repeat rewrite map_length. reflexivity.
+    intros RT HRT. enough (Rel.T (length (List.map fst btm2)) = Rel.T (length s1 + 0)).
+    apply (@JMeq_trans _ _ _ _
+      (Rel.sum
+        (Rel.sel
+          (Rel.rsum
+            (Rel.sum (Rel.sel (Rel.rsum RT (fun Vl => Rel.Rsingle Vl))
+                              (fun Vl => S3.is_btrue (Sc0 (Evl.env_app _ _ (Evl.env_of_tuple (s2::List.nil) Vl) h))))
+                     (fun Vl => cast _ _ H (Stml0 (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h))))
+            (fun Vl => Rel.Rsingle Vl))
+          (fun Vl => S3.is_btrue (Sc (Evl.env_app _ _ (Evl.env_of_tuple (s1::List.nil) Vl) h))))
+        (fun Vl => Stml (Evl.env_app _ _ (Evl.env_of_tuple (s1::List.nil) Vl) h)))).
+    + apply eq_sum_dep. reflexivity. reflexivity.
       apply eq_sel_dep. reflexivity.
-      apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)).
-      eapply (JMeq_trans _ HRT). Unshelve. Focus 8.
-      destruct (SQLSem3.jT_sem_fun_dep _ _ _ _ _ H28 _ _ _ _ eq_refl eq_refl H13).
-      generalize ST1, H28, H2. clear H H6 ST1 H21 H26 H27 H28 H2. rewrite H1.
-      intros. rewrite H2. reflexivity.
-      reflexivity.
-      apply funext_JMeq. reflexivity. f_equal.
-      simpl. rewrite <- H24. repeat rewrite map_length. omega.
-      intros Wl Wl' eWl. rewrite eWl.
-      eapply (f_JMequal _ _ _ _ HStml1). Unshelve. reflexivity.
+      apply eq_rsum_dep. reflexivity. reflexivity.
       apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)). apply cast_JMeq.
-      eapply (JMeq_trans _ (eq_JMeq (eq_sym (sel_true _ _ _)))). Unshelve.
-      reflexivity. reflexivity. reflexivity. reflexivity. reflexivity.
-      simpl. rewrite <- H24. repeat rewrite map_length. rewrite Nat.add_0_r. reflexivity.
-      symmetry. apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)).
-      apply cast_JMeq. reflexivity. intros. simpl. reflexivity.
-      rewrite Rel_sum_sum. apply eq_sum_dep.
-      reflexivity. unfold btm_subst_scm, btm_subst. repeat rewrite map_length. reflexivity.
-      erewrite (SQLSem3.jc_sem_fun_dep _ _ _ _ H14 _ _ _ _ _ H31). Unshelve. reflexivity.
-      apply funext_JMeq; try auto.
-      unfold btm_subst_scm, btm_subst. repeat rewrite map_length. reflexivity.
-      intros x y exy. rewrite exy. symmetry.
-      generalize Stml0, H15. clear Stml0 H0 H15.
-      rewrite eq_btm_subst_tml_subst. intros.
-      eapply unnest_tml.
-      rewrite <- H24. repeat rewrite map_length. reflexivity.
-      exact H11.
-      exact H32.
-      exact H15.
-      exact HStml1.
+      apply eq_sum_dep. reflexivity.
+      rewrite <- H12. repeat rewrite map_length. omega.
+      apply eq_sel_dep. reflexivity.
+      apply eq_rsum_dep. reflexivity. reflexivity.
+      apply cast_JMeq. apply (JMeq_trans (Rel_times_Rone _ _)). exact HRT.
+      apply eq_JMeq. extensionality Vl. apply JMeq_eq. apply cast_JMeq. apply Rel_Rone_times.
+      reflexivity.
+      apply funext_JMeq. reflexivity. rewrite <- H12. repeat rewrite map_length. f_equal. omega.
+      intros. symmetry. apply cast_JMeq. rewrite H0. reflexivity.
+      apply eq_JMeq. extensionality Vl. apply JMeq_eq. apply cast_JMeq. apply Rel_Rone_times.
       reflexivity.
       reflexivity.
+    + repeat rewrite rsum_single. rewrite sel_true. rewrite Rel_sum_sum.
+      apply eq_sum_dep. reflexivity. unfold btm_subst_scm, btm_subst; repeat rewrite map_length. reflexivity.
+      apply eq_sel_dep. reflexivity.
+      symmetry. eapply (trans_JMeq (rsum_id _ _ _ _ _)). Unshelve.
+      apply cast_JMeq. apply (trans_JMeq (Rel_times_Rone _ _)). exact HRT.
+      apply eq_JMeq. extensionality Vl. f_equal.
+      rewrite (SQLSem3.jc_sem_fun_dep _ _ _ _ H11 _ _ _ eq_refl eq_refl H14). reflexivity.
+      apply funext_JMeq. reflexivity. unfold btm_subst_scm, btm_subst; repeat rewrite map_length. reflexivity.
+      intros. rewrite <- H0. clear y H0.
+      apply (cast_elim (Ev.env (s2 :: G) -> Rel.T (length s1 + 0)) Stml0).
+        rewrite <- H12. repeat rewrite map_length. rewrite <- plus_n_O. reflexivity.
+      intros Stml0' HStml0'. apply (@JMeq_trans _ _ _ _
+        (Stml (Evl.env_app _ _ (Evl.env_of_tuple (s1::List.nil) (Stml0' (Evl.env_app _ _ (Evl.env_of_tuple (s2::List.nil) x) h))) h))).
+      - apply eq_JMeq. f_equal. f_equal. f_equal. apply JMeq_eq. apply cast_JMeq.
+        generalize dependent Stml0'. rewrite <- plus_n_O.
+        replace (length s1) with (length (List.map fst btm2)). intros. rewrite HStml0'. reflexivity.
+        rewrite <- H12. repeat rewrite map_length. reflexivity.
+      - generalize dependent Stml1. rewrite eq_btm_subst_tml_subst. intros.
+        eapply (unnest_tml _ _ _ _ _ _ _ _ _ _ _ H10 H13 H16). exact HStml0'. Unshelve.
+        rewrite <- H12. repeat rewrite map_length. reflexivity.
+      - intros. inversion H9. apply (existT_eq_elim H2); intros. rewrite <- H4. reflexivity.
+      - intros. simpl. apply cast_JMeq. apply Rel_Rone_times.
+    + f_equal. rewrite <- H12. repeat rewrite map_length. omega.
   Qed.
-
 
 End RewriteRules.
