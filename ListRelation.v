@@ -493,6 +493,13 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     rewrite <- count_occ_sort. clear e. unfold list_comp. 
     rewrite (count_occ_list_comp _ _ _ _ List.nil); reflexivity.
   Qed.
+  Lemma p_rsum : forall m n, forall r : R m, forall f : T m -> R n, forall t, 
+                    memb (rsum r f) t = list_sum (List.map (fun t0 => memb r t0 * memb (f t0) t) (supp r)).
+  Proof.
+    intros. destruct r. unfold memb, supp; simpl.
+    rewrite <- count_occ_sort. clear e.
+    rewrite count_occ_list_rcomp; reflexivity.
+  Qed.
 
   Lemma p_self : forall n, forall r : R n, forall p t, p t = false -> memb (sel r p) t = 0.
   Proof.
@@ -545,12 +552,20 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     destruct e. apply JMeq_eq. destruct e0. reflexivity.
   Qed.
 
-  Axiom Rsingle : forall n, T n -> R n.
-  Implicit Arguments Rsingle [n].
-
-  Axiom p_rsum : forall m n, forall r : R m, forall f : T m -> R n, forall t,
-                    memb (rsum r f) t = list_sum (List.map (fun t0 => memb r t0 * memb (f t0) t) (supp r)).
-  Axiom p_single : forall n (t : T n), memb (Rsingle t) t = 1.
-  Axiom p_single_neq : forall n (t1 t2 : T n), t1 <> t2 -> memb (Rsingle t1) t2 = 0.
+  Definition Rsingle {n} : T n -> R n :=
+    fun t => sum Rone (fun _ => t).
+  Lemma p_single : forall n (t : T n), memb (Rsingle t) t = 1.
+  Proof.
+    intros. unfold Rsingle. rewrite p_sum. replace (T_eqb t t) with true. 
+    simpl. rewrite p_one. omega.
+    rewrite (proj2 (T_eqb_eq _ _ _) eq_refl). reflexivity.
+  Qed.
+  Lemma p_single_neq : forall n (t1 t2 : T n), t1 <> t2 -> memb (Rsingle t1) t2 = 0.
+  Proof.
+    intros. unfold Rsingle. rewrite p_sum. replace (T_eqb t1 t2) with false. simpl. reflexivity.
+    destruct (T_eqb t1 t2) eqn:e.
+    contradiction H. eapply (proj1 (T_eqb_eq _ _ _)). exact e.
+    reflexivity.
+  Qed.
 
 End MultiSet.

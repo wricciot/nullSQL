@@ -81,6 +81,8 @@ Module Db.
   Axiom db_rel   : forall d n xl, db_schema d n = Some xl -> Rel.R (List.length xl).
   Implicit Arguments db_rel [d n xl].
 
+  Axiom db_schema_nodup : forall d n xl, db_schema d n = Some xl -> List.NoDup xl.
+
   Lemma Scm_dec (s1 s2 : Scm) : {s1 = s2} + {s1 <> s2}.
     exact (list_eq_dec Name_dec s1 s2).
   Qed.

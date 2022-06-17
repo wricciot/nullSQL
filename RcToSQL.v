@@ -93,7 +93,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   Inductive j_tuple_x (d : Db.D) : list Scm -> Rc.tm -> Scm -> list Sql.pretm -> Prop :=
   | jtx_mktup : forall g bl, 
       forall tl',
-(*      List.NoDup (List.map fst bl) -> *)
+      List.NoDup (List.map fst bl) ->
       j_basel_x d g (List.map snd bl) tl' ->
       j_tuple_x d g (mktup bl) (List.map fst bl) tl'.
 
@@ -106,10 +106,28 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       forall tl',
       j_basel_x d g tl tl' -> length tl = n ->
       j_cond_x d g (pred n p tl) (cndpred n p tl')
+  | jwx_true : forall g, j_cond_x d g rctrue cndtrue
+  | jws_false : forall g, j_cond_x d g rcfalse cndfalse
+  | jws_isnull : forall g t,
+      forall t', j_base_x d g t t' ->
+      j_cond_x d g (isnull t) (cndnull true t')
+  | jws_istrue : forall g c,
+      forall c', j_cond_x d g c c' ->
+      j_cond_x d g (istrue c) (cndistrue c')
+  | jws_and : forall g c1 c2,
+      forall c1' c2', j_cond_x d g c1 c1' -> j_cond_x d g c2 c2' ->
+      j_cond_x d g (rcand c1 c2) (cndand c1' c2')
+  | jws_or : forall g c1 c2,
+      forall c1' c2', j_cond_x d g c1 c1' -> j_cond_x d g c2 c2' ->
+      j_cond_x d g (rcor c1 c2) (cndor c1' c2')
+  | jws_not : forall g c,
+      forall c', j_cond_x d g c c' ->
+      j_cond_x d g (rcnot c) (cndnot c')
+
 
   with j_coll_x (d : Db.D) : list Scm -> Rc.tm -> bool -> Scm -> Sql.prequery -> Prop :=
   | jcx_nil : forall g b s, 
-      j_coll_x d g (nil b s) b s (sql_nil s)
+      List.NoDup s -> j_coll_x d g (nil b s) b s (sql_nil s)
   | jcx_disjunct : forall g t,
       forall b s tl' c' Bl',
       (* not union is implicity in j_disjunct_x *)
@@ -187,7 +205,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   Lemma j_tuple_x_length : forall d G t s tl', j_tuple_x d G t s tl' -> length s = length tl'.
   Proof.
     intros d G t s tl' H. inversion H; simpl; subst.
-    generalize (j_basel_x_length _ _ _ _ H0). do 2 rewrite map_length. intuition.
+    generalize (j_basel_x_length _ _ _ _ H1). do 2 rewrite map_length. intuition.
   Qed.
 
   Lemma j_disjunct_x_length : forall d G t b s tl c Bl,
@@ -200,10 +218,43 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
           (fun G0 t0 b0 s0 q0 _ => True)
           (fun G0 t0 b0 s0 tml0 _ Bl0 _ => length s0 = length tml0)
           (fun G0 t0 b0 s0 T' _ => True)
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
     Unshelve.
     all: simpl; intuition.
     eapply j_tuple_x_length. exact j.
+  Qed.
+
+  Lemma j_coll_x_nodup_schema : forall d G t b s qt,
+    j_coll_x d G t b s qt ->
+    NoDup s.
+  Proof.
+    intros d G t b s qt Hx.
+    eapply (jcx_ind_mut _
+          (fun G0 t0 t0' _ => True)
+          (fun G0 t0 b0 s0 q0 _ => NoDup s0)
+          (fun G0 t0 b0 s0 tml0 _ Bl0 _ => NoDup s0)
+          (fun G0 t0 b0 s0 T' _ => True)
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hx).
+    Unshelve.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl. intros. inversion j. exact H0.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
   Qed.
 
   Lemma j_tuple_x_sem_eq : forall d G t s tml',
@@ -212,7 +263,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   Proof.
     intros d G t s tml' H. inversion H; subst.
     intros s' St H'. inversion H'; subst.
-    apply map_fst_combine. exact H5.
+    apply map_fst_combine. exact H6.
   Qed.
 
   Lemma j_coll_x_sem_eq : forall d G t b s qt,
@@ -226,11 +277,18 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
           (fun G0 t0 b0 s0 q0 _ => forall b' s' St, RCSem.j_coll_sem d G0 t0 b' s' St -> b0 = b' /\ s0 = s')
           (fun G0 t0 b0 s0 tml0 _ Bl0 _ => forall b' s' St, RCSem.j_disjunct_sem d G0 t0 b' s' St -> b0 = b' /\ s0 = s')
           (fun G0 t0 b0 s0 T' _ => forall b' s' St, RCSem.j_gen_sem d G0 t0 b' s' St -> b0 = b' /\ s0 = s')
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hx).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hx).
     Unshelve.
     + simpl; intuition.
     + simpl; intuition.
-    + simpl; intros g0 b0 s0 b' s' St Hsem. inversion Hsem; subst. intuition. inversion H4.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intuition.
+    + simpl; intros g0 b0 s0 Hnd b' s' St Hsem. inversion Hsem; subst. intuition. inversion H4.
     + simpl. intros g0 t0 b0 s0 tml' c' Bl' Ht0 IHt0 b' s' St Hsem. inversion Hsem; subst; inversion Ht0; subst.
       eapply IHt0. exact H4.
       eapply IHt0. exact H4.
@@ -280,17 +338,11 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     eexists; split. constructor. simpl; reflexivity.
   + intros G0 i a Sia j. clear H; intros t0' H.
     inversion H; subst. elim j; intros.
-    - eexists; split. constructor. constructor. 
-      (* XXX exact H0. doesn't work -- apparently here Coq doesn't know that RC and SQL use the same Eval *)
-      admit.
-      simpl; intro. (* this will actually be reflexivity after we fix the problem above *) admit.
+    - eexists; split. constructor. constructor. exact H0.
+      reflexivity.
     - decompose record H1; rename x into Sp.
-      eexists; split. constructor. constructor.
-      (* XXX exact H0. doesn't work -- apparently here Coq doesn't know that RC and SQL use the same Eval *)
-      admit.
-      simpl; intro. (* this will actually be reflexivity after we fix the problem above *) admit.
-    Unshelve. (* will go away after metavariables are instantiated *) admit. admit.
-  Admitted.
+      eexists; split. constructor. constructor. exact H0. intuition.
+  Qed.
 
   Lemma basel_rcsem_to_sqlsem : forall d G tl Stl,
     RCSem.j_basel_sem d G tl Stl ->
@@ -317,13 +369,13 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   Proof.
     intros d G t s St H. inversion H; subst.
     intros tml' Html'. inversion Html'; subst.
-    enough (List.map snd (combine s bl) = bl). rewrite H3 in H5.
-    decompose record (basel_rcsem_to_sqlsem _ _ _ _ H6 _ H5); rename x into Stml'.
-    eexists; split. exact H8.
-    apply (existT_eq_elim H0); intros. apply (existT_eq_elim (JMeq_eq H10)); intros.
-    rewrite <- H12. symmetry. apply cast_fun_app_JM; try intuition.
+    enough (List.map snd (combine s bl) = bl). rewrite H3 in H7.
+    decompose record (basel_rcsem_to_sqlsem _ _ _ _ H6 _ H7); rename x into Stml'.
+    eexists; split. exact H9.
+    apply (existT_eq_elim H0); intros. apply (existT_eq_elim (JMeq_eq H11)); intros.
+    rewrite <- H13. symmetry. apply cast_fun_app_JM; try intuition.
     rewrite (j_tuple_x_length _ _ _ _ _ Html'); reflexivity.
-    rewrite <- H13. symmetry; apply H9.
+    rewrite <- H14. symmetry; apply H10.
     apply map_snd_combine. exact H2.
   Qed.
 
@@ -465,9 +517,9 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     apply JMeq_eq. apply cast_JMeq.
     eapply (JMeq_trans (sum_id _ _ _ _ _ _)).
     erewrite sel_true.
-    eapply (JMeq_trans (rsum_id _ _ _ _ _)).
+    eapply (JMeq_trans (rsum_id _ _ _ _ _ _)).
     apply Rel_times_Rone.
-    intros; simpl. (* add hypothesis to Sem. *) admit.
+    intros; simpl. apply Sem.is_btrue_btrue.
     Unshelve.
     + rewrite length_tmlist; simpl; rewrite app_length; reflexivity.
     + intro Vl; simpl.
@@ -481,8 +533,9 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
         Unshelve.
         reflexivity. simpl. rewrite length_tmlist. simpl. rewrite app_length. reflexivity.
         eapply tml_sem_tmlist_of_ctx_eq. exact H1. reflexivity.
+    + reflexivity.
     + intros. simpl. apply cast_JMeq. apply Rel_Rone_times.
-  Admitted.
+  Qed.
 
   Lemma eq_plus_dep m n (e : m = n) :
     forall (r1 r2 : Rel.R m) (r1' r2' : Rel.R n),
@@ -526,11 +579,11 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       assert (Rel.memb (Rel.sel Rel.Rone (fun _ : Rel.T 0 => Sem.is_btrue Sem.bfalse)) t > 0).
       apply Rel.p_fs_r. rewrite e. constructor. reflexivity.
       erewrite Rel.p_self in H2. contradiction (lt_irrefl _ H2).
-      (* TODO bfalse is not btrue *) admit.
+      apply Sem.is_btrue_bfalse.
       Unshelve. rewrite H0. reflexivity.
     + unfold RCSem.sem_nil. rewrite Rel.p_self. reflexivity. reflexivity.
     + elim s; simpl; intuition.
-  Admitted.
+  Qed.
 
   Lemma flat_sem_nil n : Rel.flat (RCSem.sem_nil n) = RCSem.sem_nil n.
   Proof.
@@ -588,7 +641,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
             s0 = st0 /\
             exists STt0, SQLSem.j_tb_sem d G0 s0 Tt0 STt0
               /\ forall h, STt0 h ~= S0 h)
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
   Unshelve.
   (*-- mutual induction cases: base --*)
   + simpl. intros G0 q0 b0 s0 Sq0 Hq0 IHq0. clear H; intros ct0 H.
@@ -613,8 +666,8 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
       4: { rewrite <- plus_n_O; reflexivity. }
       4: { rewrite <- plus_n_O; reflexivity. }
     rewrite rsum_single. apply H3.
-    intros _ _. (* btrue is btrue *) admit.
-    (* arithmetic *) admit.
+    intros _ _. apply Sem.is_btrue_btrue.
+    intro. rewrite Sem.bneg_of_bool. destruct x; reflexivity.
   + simpl. intros G0 n0 p0 tml0 Stml0 Hlen Html0. clear H; intros ct0 H.
     inversion H; subst.
     decompose record (basel_rcsem_to_sqlsem _ _ _ _ Html0 _ H5). rename x into Stl'.
@@ -625,8 +678,37 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     clear H2. generalize dependent Stl'. rewrite H0. intros.
     rewrite H3. reflexivity.
     rewrite (j_basel_x_length _ _ _ _ H5). reflexivity.
-  (*-- mutual induction cases: collection --*)
-  + simpl; intros G0 b0 s0. simpl. clear H; intros qt0 H.
+  + simpl. intros G0. clear H; intros ct0 H.
+    inversion H; subst. eexists; split. constructor. simpl; intuition.
+  + simpl. intros G0. clear H; intros ct0 H.
+    inversion H; subst. eexists; split. constructor. simpl; intuition.
+  + simpl. intros G0 t0 St0 Ht0. clear H; intros ct0 H.
+    inversion H; subst.
+    decompose record (base_rcsem_to_sqlsem _ _ _ _ Ht0 _ H2). rename x into St'.
+    eexists; split. constructor. exact H1. simpl; intro. rewrite H3. reflexivity.
+  + simpl. intros G0 c Sc. clear H; intros Hc IHc c0 H.
+    inversion H; subst. decompose record (IHc _ H2).
+    eexists; split. constructor. exact H1.
+    intro; simpl. rewrite H3. reflexivity.
+  + simpl. intros G0 c1 c2 Sc1 Sc2. clear H; intros Hc1 IHc1 Hc2 IHc2 c' H.
+    inversion H; subst.
+    decompose record (IHc1 _ H3). clear IHc1; rename x into Sc1'; rename H1 into IHc1.
+    decompose record (IHc2 _ H5). clear IHc2; rename x into Sc2'; rename H1 into IHc2.
+    eexists; split. constructor. exact IHc1. exact IHc2.
+    simpl; intro. rewrite H2, H4. reflexivity.
+  + simpl. intros G0 c1 c2 Sc1 Sc2. clear H; intros Hc1 IHc1 Hc2 IHc2 c' H.
+    inversion H; subst.
+    decompose record (IHc1 _ H3). clear IHc1; rename x into Sc1'; rename H1 into IHc1.
+    decompose record (IHc2 _ H5). clear IHc2; rename x into Sc2'; rename H1 into IHc2.
+    eexists; split. constructor. exact IHc1. exact IHc2.
+    simpl; intro. rewrite H2, H4. reflexivity.
+  + simpl. intros G0 c Sc. clear H; intros Hc IHc c0 H.
+    inversion H; subst.
+    decompose record (IHc _ H2). clear IHc; rename x into Sc1; rename H1 into IHc.
+    eexists; split. constructor. exact IHc.
+    simpl; intro. rewrite H3. reflexivity.
+  (*-- mutual inuction cases: collection --*)
+  + simpl; intros G0 b0 s0 Hnd. simpl. clear H; intros qt0 H.
     eapply (jcx_nil_inv _ _ _ _ _ _ _ 
              (fun dd GG bb ss bb' ss' qq' =>
                exists Sqt0, SQLSem.j_q_sem d GG ss' qq' Sqt0 /\
@@ -994,7 +1076,7 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
   + simpl; intros G0 x0 s0 e0. clear H; intros st0 Tt0 Hx0.
     inversion Hx0; subst. rewrite e0 in H1. injection H1; intuition.
     generalize e0; clear e0; rewrite H; intro.
-    assert (NoDup st0). (* require DB schemas to be duplicate free *) admit.
+    assert (NoDup st0). apply (db_schema_nodup _ _ _ e0).
     epose (Hq := (sql_distinct_sem d G0 st0 (tbbase x0) _ _ _)); clearbody Hq.
       Unshelve. shelve. shelve. exact H0. constructor.
       Unshelve. decompose record Hq; clear Hq; rename x into Sq.
@@ -1003,21 +1085,12 @@ Module RcToSql (Sem : SEM) (Rc : RC) (Sql : SQL).
     inversion H; subst. enough (s0 = st0). subst.
     decompose record (IHt1 _ H3). decompose record (IHt2 _ H4). rename x into Sq1'; rename x0 into Sq2'.
     intuition. 
-    assert (NoDup st0). (* require well formed RC to have duplicate free schemas, then derive from jt1 or H3 *) admit.
+    assert (NoDup st0). apply (j_coll_x_nodup_schema _ _ _ _ _ _ H3).
     epose (Hq := (sql_distinct_sem d G0 st0 (tbquery (q1' EXCEPT ALL q2')) _ _ _)); clearbody Hq.
       Unshelve. shelve. shelve. shelve. exact H0. constructor. constructor. exact H1. exact H5.
       Unshelve. decompose record Hq; clear Hq; rename x into Sq.
     eexists; split. constructor. exact H8. intro; rewrite <- H2, <- H6, H9; reflexivity.
     rewrite (j_coll_x_sem_eq_scm _ _ _ _ _ _ _ _ _ H3 jt1); reflexivity.
-  Admitted.
+  Qed.
 
 End RcToSql.
-
-(*
-MEDIUM
-------
-
-Implement rsum
-
-
-*)

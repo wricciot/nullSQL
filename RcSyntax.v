@@ -4,23 +4,31 @@ Module Type RC.
   Import Db.
 
   Inductive tm :=
-  | cst    : BaseConst -> tm
-  | null   : tm
-  | pred   : forall n, (forall l : list BaseConst, length l = n -> bool) -> list tm -> tm
-  | var    : nat -> tm
-  | mktup  : list (Name * tm) -> tm
-  | proj   : tm -> Name -> tm
-  | tab    : Name -> tm
-  | nil    : bool -> Scm -> tm      (* is set, schema *)
-  | single : bool -> tm -> tm       (* is_set *)
-  | union  : tm -> tm -> tm
-  | inters : tm -> tm -> tm
-  | diff   : tm -> tm -> tm
-  | comprn : tm -> tm -> tm
-  | cwhere : tm -> tm -> tm
-  | dist   : tm -> tm
-  | prom   : tm -> tm
-  | empty  : bool -> tm -> tm
+  | cst     : BaseConst -> tm
+  | null    : tm
+  | pred    : forall n, (forall l : list BaseConst, length l = n -> bool) -> list tm -> tm
+  | var     : nat -> tm
+  | mktup   : list (Name * tm) -> tm
+  | proj    : tm -> Name -> tm
+  | tab     : Name -> tm
+  | nil     : bool -> Scm -> tm      (* is set, schema *)
+  | single  : bool -> tm -> tm       (* is_set *)
+  | union   : tm -> tm -> tm
+  | inters  : tm -> tm -> tm
+  | diff    : tm -> tm -> tm
+  | comprn  : tm -> tm -> tm
+  | cwhere  : tm -> tm -> tm
+  | dist    : tm -> tm
+  | prom    : tm -> tm
+  | empty   : bool -> tm -> tm
+
+  | rctrue  : tm
+  | rcfalse : tm
+  | isnull  : tm -> tm
+  | istrue  : tm -> tm
+  | rcand   : tm -> tm -> tm
+  | rcor    : tm -> tm -> tm
+  | rcnot   : tm -> tm
   .
 
   Inductive j_var (a : Name) : Scm -> Prop :=
@@ -36,7 +44,7 @@ Module Type RC.
   | j_tmvar : forall g n s, List.nth_error g n = Some s -> j_tuple d g (var n) s
   | j_mktup : forall g bl, 
       List.NoDup (List.map fst bl) ->
-      (forall g t, List.In t (List.map snd bl) -> j_base d g t)
+      (forall t, List.In t (List.map snd bl) -> j_base d g t)
       -> j_tuple d g (mktup bl) (List.map fst bl).
 
   Inductive j_cond (d : Db.D) : list Scm -> tm -> Prop :=
@@ -44,10 +52,17 @@ Module Type RC.
   | j_pred : forall g n p tl, 
       (forall t, List.In t tl -> j_base d g t) -> length tl = n 
       -> j_cond d g (pred n p tl)
+  | j_true : forall g, j_cond d g rctrue
+  | j_false : forall g, j_cond d g rcfalse
+  | j_isnull : forall g t, j_base d g t -> j_cond d g (isnull t)
+  | j_istrue : forall g c, j_cond d g c -> j_cond d g (istrue c)
+  | j_and : forall g c1 c2, j_cond d g c1 -> j_cond d g c2 -> j_cond d g (rcand c1 c2)
+  | j_or : forall g c1 c2, j_cond d g c1 -> j_cond d g c2 -> j_cond d g (rcor c1 c2)
+  | j_not : forall g c, j_cond d g c -> j_cond d g (rcnot c)
 
   with j_coll (d : Db.D) : list Scm -> tm -> bool -> Scm -> Prop :=
   | j_tab : forall g x s, Db.db_schema d x = Some s -> j_coll d g (tab x) false s
-  | j_nil : forall g b s, j_coll d g (nil b s) b s
+  | j_nil : forall g b s, List.NoDup s -> j_coll d g (nil b s) b s
   | j_single : forall g b t s, j_tuple d g t s -> j_coll d g (single b t) b s
   | j_union : forall g q1 q2 b s, j_coll d g q1 b s -> j_coll d g q2 b s -> j_coll d g (union q1 q2) b s
   | j_inters : forall g q1 q2 b s , j_coll d g q1 b s -> j_coll d g q2 b s -> j_coll d g (inters q1 q2) b s
@@ -94,9 +109,16 @@ Module Type RC.
   | j_npred : forall g n p tl, 
       j_nbasel d g tl -> length tl = n
       -> j_ncond d g (pred n p tl)
+  | j_ntrue : forall g, j_ncond d g rctrue
+  | j_nfalse : forall g, j_ncond d g rcfalse
+  | j_nisnull : forall g t, j_nbase d g t -> j_ncond d g (isnull t)
+  | j_nistrue : forall g c, j_ncond d g c -> j_ncond d g (istrue c)
+  | j_nand : forall g c1 c2, j_ncond d g c1 -> j_ncond d g c2 -> j_ncond d g (rcand c1 c2)
+  | j_nor : forall g c1 c2, j_ncond d g c1 -> j_ncond d g c2 -> j_ncond d g (rcor c1 c2)
+  | j_nnot : forall g c, j_ncond d g c -> j_ncond d g (rcnot c)
 
   with j_ncoll (d : Db.D) : list Scm -> tm -> bool -> Scm -> Prop :=
-  | j_ncnil : forall g b s, j_ncoll d g (nil b s) b s
+  | j_ncnil : forall g b s, List.NoDup s -> j_ncoll d g (nil b s) b s
   | j_ncdisjunct : forall g t b s, not_union t = true -> j_ndisjunct d g t b s -> j_ncoll d g t b s
   | j_ncunion : forall g t1 t2 b s, 
       j_ndisjunct d g t1 b s ->

@@ -9,15 +9,6 @@ Module RcSemantics (Sem: SEM) (Rc : RC).
   Module SF := SemFacts.Facts.
   Import SF.
 
-  (* alternate -- not stronger but easier -- version of sum *)
-
-  Axiom R_sum : forall m n, Rel.R m -> (Rel.T m -> Rel.R n) -> Rel.R n.
-  Implicit Arguments R_sum [m n].
-
-  (* singleton rel *)
-  Definition R_single {m} : Rel.T m -> Rel.R m :=
-    fun t => Rel.sum Rel.Rone (fun _ => t).
-
   Definition sem_empty : forall n, Rel.R n -> B :=
     fun n r => of_bool(Rel.card r =? 0).
 
@@ -58,10 +49,27 @@ Module RcSemantics (Sem: SEM) (Rc : RC).
      j_basel_sem d G tml Stml ->
      j_cond_sem d G (pred n p tml) 
        (fun Vl => Sem.sem_bpred _ p (to_list (Stml Vl)) (eq_trans (length_to_list _ _ _) e))
+  | jws_true : forall G, j_cond_sem d G rctrue (fun _ => Sem.btrue)
+  | jws_false : forall G, j_cond_sem d G rcfalse (fun _ => Sem.bfalse)
+  | jws_isnull : forall G t,
+      forall St, j_base_sem d G t St ->
+      j_cond_sem d G (isnull t) (fun Vl => Sem.of_bool (match St Vl with None => true | _ => false end))
+  | jws_istrue : forall G c,
+      forall Sc, j_cond_sem d G c Sc ->
+      j_cond_sem d G (istrue c) (fun Vl => Sem.of_bool (Sem.is_btrue (Sc Vl)))
+  | jws_and : forall G c1 c2,
+      forall Sc1 Sc2, j_cond_sem d G c1 Sc1 -> j_cond_sem d G c2 Sc2 ->
+      j_cond_sem d G (rcand c1 c2) (fun Vl => Sem.band (Sc1 Vl) (Sc2 Vl))
+  | jws_or : forall G c1 c2,
+      forall Sc1 Sc2, j_cond_sem d G c1 Sc1 -> j_cond_sem d G c2 Sc2 ->
+      j_cond_sem d G (rcor c1 c2) (fun Vl => Sem.bor (Sc1 Vl) (Sc2 Vl))
+  | jws_not : forall G c,
+      forall Sc, j_cond_sem d G c Sc ->
+      j_cond_sem d G (rcnot c) (fun Vl => Sem.bneg (Sc Vl))
 
   with j_coll_sem (d : Db.D) : forall G (t : tm) (b:bool) (s:Scm), (env G -> Rel.R (List.length s)) -> Prop :=
   | jcs_nnil : forall G b s,
-     j_coll_sem d G (nil b s) b s (fun h => sem_nil _)
+     List.NoDup s -> j_coll_sem d G (nil b s) b s (fun h => sem_nil _)
   | jcs_ndisj : forall G t b s,
      forall St,
      j_disjunct_sem d G t b s St ->

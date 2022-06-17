@@ -467,6 +467,15 @@ Module Type SEM.
   Parameter of_bool : bool -> B.
   Parameter veq : Value -> Value -> B.
 
+  Hypothesis is_btrue_btrue : is_btrue btrue = true.
+  Hypothesis is_btrue_bfalse : is_btrue bfalse = false.
+  Hypothesis is_bfalse_btrue : is_bfalse btrue = false.
+  Hypothesis is_bfalse_bfalse : is_bfalse bfalse = true.
+
+  Hypothesis band_of_bool : forall x y, band (of_bool x) (of_bool y) = of_bool (andb x y).
+  Hypothesis bor_of_bool : forall x y, bor (of_bool x) (of_bool y) = of_bool (orb x y).
+  Hypothesis bneg_of_bool : forall x, bneg (of_bool x) = of_bool (negb x).
+
   Hypothesis sem_bpred : forall n, (forall l : list BaseConst, length l = n -> bool) -> 
     forall l : list Value, length l = n -> B.
 
@@ -494,6 +503,24 @@ Module Sem2 <: SEM.
     | Some x1, Some x2 => c_eq x1 x2
     | _, _ => false
     end.
+
+  Lemma is_btrue_btrue : is_btrue btrue = true. Proof. reflexivity. Qed.
+  Lemma is_btrue_bfalse : is_btrue bfalse = false. Proof. reflexivity. Qed.
+  Lemma is_bfalse_btrue : is_bfalse btrue = false. Proof. reflexivity. Qed.
+  Lemma is_bfalse_bfalse : is_bfalse bfalse = true. Proof. reflexivity. Qed.
+
+  Lemma band_of_bool : forall x y, band (of_bool x) (of_bool y) = of_bool (andb x y).
+  Proof.
+    intros. destruct x; destruct y; reflexivity.
+  Qed.
+  Lemma bor_of_bool : forall x y, bor (of_bool x) (of_bool y) = of_bool (orb x y).
+  Proof.
+    intros. destruct x; destruct y; reflexivity.
+  Qed.
+  Lemma bneg_of_bool : forall x, bneg (of_bool x) = of_bool (negb x).
+  Proof.
+    intros. destruct x; reflexivity.
+  Qed.
 
   Definition sem_bpred_aux
   : forall n (p : (forall l : list BaseConst, length l = n -> bool)), 
@@ -550,6 +577,24 @@ Module Sem3 <: SEM.
     | Some x1, Some x2 => tribool_of_bool (c_eq x1 x2)
     | _, _ => unknown
     end.
+
+  Lemma is_btrue_btrue : is_btrue btrue = true. Proof. reflexivity. Qed.
+  Lemma is_btrue_bfalse : is_btrue bfalse = false. Proof. reflexivity. Qed.
+  Lemma is_bfalse_btrue : is_bfalse btrue = false. Proof. reflexivity. Qed.
+  Lemma is_bfalse_bfalse : is_bfalse bfalse = true. Proof. reflexivity. Qed.
+
+  Lemma band_of_bool : forall x y, band (of_bool x) (of_bool y) = of_bool (andb x y).
+  Proof.
+    intros. destruct x; destruct y; reflexivity.
+  Qed.
+  Lemma bor_of_bool : forall x y, bor (of_bool x) (of_bool y) = of_bool (orb x y).
+  Proof.
+    intros. destruct x; destruct y; reflexivity.
+  Qed.
+  Lemma bneg_of_bool : forall x, bneg (of_bool x) = of_bool (negb x).
+  Proof.
+    intros. destruct x; reflexivity.
+  Qed.
 
   Definition sem_bpred_aux
   : forall n (p : (forall l : list BaseConst, length l = n -> bool)), 

@@ -125,6 +125,10 @@ Module SQLSemantics (Sem: SEM) (Sql : SQL).
       forall St,
       j_tm_sem G t St ->
       j_cond_sem d G (cndnull b t) (fun Vl => of_bool (match St Vl with None => b | _ => negb b end))
+  | jcs_istrue : forall G c,
+      forall Sc,
+      j_cond_sem d G c Sc ->
+      j_cond_sem d G (cndistrue c) (fun Vl => of_bool (Sem.is_btrue (Sc Vl)))
   | jcs_pred : forall G n p tml,
       forall Stml e,
       j_tml_sem G tml Stml ->
@@ -175,13 +179,6 @@ Module SQLSemantics (Sem: SEM) (Sql : SQL).
         (fun h =>
          let Rbtb := Sbtb h in
          Rel.rsum Rbtb (fun Vl => cast _ _ e (Rel.times (Sbtbl (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h)) (Rel.Rsingle Vl))))
-(*
-         let Rbtb := Sbtb h in
-         R_sum Rbtb (fun Vl => cast _ _ e (Rel.times (R_single Vl) (Sbtbl (Evl.env_app _ _ (Evl.env_of_tuple _ Vl) h)))))
-*)
-(*         let Rbtbl := Sbtbl h in
-         R_sum Rbtbl (fun Vl => cast _ _ e (Rel.times (Sbtb (Evl.env_app _  _ (Evl.env_of_tuple _ Vl) h)) (R_single Vl))))
-*)
   with j_in_q_sem (d : Db.D) : forall G, prequery -> (env G -> bool) -> Prop :=
   | jiqs_sel : forall G b tml btbl c,
       forall G0 Sbtbl Sc Stml,
@@ -347,6 +344,8 @@ no, we can simplify *)
     + intros. inversion H. reflexivity.
     + intros. inversion H. apply (existT_eq_elim H4); clear H4; intros; subst.
       replace St0 with St. reflexivity. apply (j_tm_sem_fun _ _ _ j _ H2).
+    + intros. inversion H0. apply (existT_eq_elim H3); clear H3; intros; subst.
+      rewrite (H _ H4). reflexivity.
     + intros. inversion H. apply (existT_eq_elim H3); clear H3; intros; subst.
       apply (existT_eq_elim H5); clear H5; intros; subst. 
       replace e0 with (@eq_refl _ (length tml)).

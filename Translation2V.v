@@ -30,6 +30,7 @@ Module Translation2V (Sql : SQL).
 
   Fixpoint ttcond (d: Db.D) (c : precond) : precond :=
     match c with
+    | cndistrue c => ttcond d c
     | cndmemb true tl Q => cndmemb true tl (ttquery d Q)
     | cndmemb false tl Q => 
         let al := freshlist (length tl) in
@@ -46,6 +47,7 @@ Module Translation2V (Sql : SQL).
     end
   with ffcond (d: Db.D) (c : precond) : precond :=
     match c with
+    | cndistrue c => cndnot (ttcond d c)
     | cndtrue => cndfalse
     | cndfalse => cndtrue
     | cndnull b t => cndnull (negb b) t
@@ -106,7 +108,7 @@ Module Translation2V (Sql : SQL).
           (fun G0 btbl G1 H0 => j_db d) 
           (fun G0 btb G1 H0 => j_db d) 
           (fun G0 Q0 H0 => j_db d)
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ HWF).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ HWF).
   Unshelve. all: simpl; intros; auto.
   Qed.
 
@@ -1101,7 +1103,7 @@ Module Translation2V (Sql : SQL).
       apply funext_JMeq. rewrite H11, <- plus_n_O; reflexivity. rewrite H11, <- plus_n_O; reflexivity.
       intros. apply cast_JMeq. apply (trans_JMeq (Rel_Rone_times _ (Rel.Rsingle x))).
       generalize dependent x. rewrite <- (plus_n_O (length s0)), <- H11. intros. rewrite H. reflexivity.
-    eapply (trans_JMeq (rsum_id _ _ _ _ _)). rewrite H0. reflexivity.
+    eapply (trans_JMeq (rsum_id _ _ _ _ _ _)). rewrite H0. reflexivity.
     apply funext_JMeq; intros.
       simpl. rewrite <- plus_n_O, Hlens. reflexivity. reflexivity.
     generalize (SQLSem2.jc_sem_fun_dep _ _ _ _ H6 _ _ _ eq_refl eq_refl Hc); intro.
@@ -1112,6 +1114,7 @@ Module Translation2V (Sql : SQL).
     simpl. rewrite Hlens, <- plus_n_O. reflexivity.
     simpl. rewrite Hlens, <- plus_n_O. reflexivity.
     simpl. rewrite Hlens, <- plus_n_O. reflexivity.
+    reflexivity.
     intro; reflexivity.
   Qed.
 
@@ -1154,7 +1157,7 @@ Module Translation2V (Sql : SQL).
               List.map (fun bT => (tttable d (fst bT), snd bT)) btb) btbl) S1 /\ 
             forall h, S0 h ~= S1 h)
           (fun G0 Q0 S0 _ => exists S1, SQLSem2.j_in_q_sem d G0 (ttquery d Q0) S1 /\ forall h, S0 h ~= S1 h)
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H).
   Unshelve.
   (** mutual induction cases: query *)
   + simpl. intros G0 b tml btbl c G1 Sbtbl Sc Stml s0 e Hbtb IHbtbl Hc IHc Html.
@@ -1215,6 +1218,11 @@ Module Translation2V (Sql : SQL).
   + simpl. intros G0 b t St Ht. eexists. eexists. 
     split. constructor. exact (sem_tm_bool_to_tribool Ht). split. constructor. exact (sem_tm_bool_to_tribool Ht).
     split; intros; destruct (St h); destruct b; reflexivity. 
+  + simpl; intros. decompose record H0. rename x into Sc'. rename x0 into Sc''.
+    exists Sc'. eexists. split. exact H1. split.
+    constructor. exact H1. split; intro.
+    rewrite <- H3. destruct (S3.is_btrue (Sc h)); reflexivity.
+    unfold S2.is_btrue in H3. rewrite <- H3. destruct (S3.is_btrue (Sc h)); reflexivity.
   + simpl. intros G0 n p tml Stml e Html.
     cut (exists Sc2, SQLSem2.j_cond_sem d G0 (List.fold_right (fun (t : pretm) (acc : precond) => 
       (t IS NOT NULL) AND acc) (TRUE) tml) Sc2).

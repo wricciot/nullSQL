@@ -152,12 +152,12 @@ Module RewriteRules (Sql : SQL).
     apply (j_nil_btbl_sem H10); intros; subst. rewrite <- H6. clear H4 H6 H10.
     apply (j_nil_btbl_sem H12); intros; subst. rewrite <- H4. clear H4 H5 H12.
     transitivity (Rel.memb (Sbtb h) ra).
-    + f_equal. apply JMeq_eq. apply rsum_id.
+    + f_equal. apply JMeq_eq. apply rsum_id. reflexivity.
       intros. apply cast_JMeq. apply Rel_Rone_times.
     + transitivity (Rel.memb (Sbtb0 h) rb).
       - eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H8 H9). Unshelve.
         shelve. shelve. exact H. exact H0.
-      - f_equal. symmetry. apply JMeq_eq. apply rsum_id.
+      - f_equal. symmetry. apply JMeq_eq. apply rsum_id. reflexivity.
         intros. apply cast_JMeq. apply Rel_Rone_times.
   Qed.
 
@@ -627,7 +627,7 @@ Module RewriteRules (Sql : SQL).
       apply sum_ext_dep.
       rewrite <- length_concat_list_sum. simpl. do 2 rewrite app_length. simpl. omega.
       rewrite <- Hlen, H15. do 2 rewrite map_length. rewrite <- H15. reflexivity.
-      rewrite <- H11. rewrite rsum_id. symmetry; exact HR2.
+      rewrite <- H11. rewrite rsum_id. symmetry; exact HR2. reflexivity.
       intros. apply cast_JMeq. apply Rel_Rone_times.
       intros. symmetry. 
       apply (cast_elim (Ev.env (s2::s1::G) -> Rel.T (length (tml_of_scm s1 1 ++ tml_of_scm s2 0))) Stml0).
@@ -674,13 +674,13 @@ Module RewriteRules (Sql : SQL).
         fr2 (fst (split r2)) (snd (split r2)) _ _ H8 H12)). Unshelve.
       apply eq_memb_dep.
           simpl; omega.
-          eapply (trans_JMeq (rsum_id _ _ _ _ _)). Unshelve. exact HR2.
+          eapply (trans_JMeq (rsum_id _ _ _ _ _ _)). Unshelve. exact HR2.
           symmetry; exact Hfr2.
           apply (split_ind r2 (fun m n p => r1 ~= append (fst p) (snd p))). intros. simpl.
           rewrite <- H3. apply (JMeq_trans Hr1). apply (JMeq_trans H1). exact Hr2.
           rewrite <- Hfr2. unfold flip.
           apply (split_ind r2 (fun m n p => (let (v1,v2) := p in append v2 v1) ~= append (snd p) (fst p))). 
-          intros. simpl. reflexivity.
+          intros. simpl. reflexivity. reflexivity.
           simpl; intro; apply cast_JMeq. rewrite <- H11. apply Rel_Rone_times.
     + enough (Rel.memb (Sbtbl h) r1 > 0).
       replace (Rel.memb (Sbtbl h) r1) with (Rel.memb R2 (flip r2)) in H3.
@@ -696,7 +696,7 @@ Module RewriteRules (Sql : SQL).
       rewrite <- H24. apply (j_nil_btbl_sem H23); intros; subst. rewrite <- H17.
       transitivity (Rel.memb (Sbtb0 h) r1). 
       eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H7 H21). Unshelve.
-      f_equal. symmetry; apply JMeq_eq; apply rsum_id. intro; apply cast_JMeq. apply Rel_Rone_times.
+      f_equal. symmetry; apply JMeq_eq; apply rsum_id. reflexivity. intro; apply cast_JMeq. apply Rel_Rone_times.
       f_equal; omega.
       exists (fst (split r2)); exists (snd (split r2)); split.
       apply (split_ind r2); simpl; intros. rewrite H4; reflexivity.
@@ -718,7 +718,7 @@ Module RewriteRules (Sql : SQL).
       symmetry. exact HR2. symmetry. apply cast_JMeq. reflexivity.
       transitivity (Rel.memb (Sbtb0 h) r1).
       eapply (j_commutative_join_btb _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H7 H21). Unshelve.
-      f_equal. symmetry. apply JMeq_eq. apply rsum_id. intro. apply cast_JMeq. apply Rel_Rone_times.
+      f_equal. symmetry. apply JMeq_eq. apply rsum_id. reflexivity. intro. apply cast_JMeq. apply Rel_Rone_times.
       f_equal. omega.
       exists (fst (split r2)); exists (snd (split r2)); split.
       apply (split_ind r2); simpl; intros. rewrite H4; reflexivity.
@@ -988,7 +988,7 @@ Module RewriteRules (Sql : SQL).
     + repeat rewrite rsum_single. rewrite sel_true. rewrite Rel_sum_sum.
       apply eq_sum_dep. reflexivity. unfold btm_subst_scm, btm_subst; repeat rewrite map_length. reflexivity.
       apply eq_sel_dep. reflexivity.
-      symmetry. eapply (trans_JMeq (rsum_id _ _ _ _ _)). Unshelve.
+      symmetry. eapply (trans_JMeq (rsum_id _ _ _ _ _ _)). Unshelve.
       apply cast_JMeq. apply (trans_JMeq (Rel_times_Rone _ _)). exact HRT.
       apply eq_JMeq. extensionality Vl. f_equal.
       rewrite (SQLSem3.jc_sem_fun_dep _ _ _ _ H11 _ _ _ eq_refl eq_refl H14). reflexivity.
@@ -1006,6 +1006,7 @@ Module RewriteRules (Sql : SQL).
         eapply (unnest_tml _ _ _ _ _ _ _ _ _ _ _ H10 H13 H16). exact HStml0'. Unshelve.
         rewrite <- H12. repeat rewrite map_length. reflexivity.
       - intros. inversion H9. apply (existT_eq_elim H2); intros. rewrite <- H4. reflexivity.
+      - reflexivity.
       - intros. simpl. apply cast_JMeq. apply Rel_Rone_times.
     + f_equal. rewrite <- H12. repeat rewrite map_length. omega.
   Qed.

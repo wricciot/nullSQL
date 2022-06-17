@@ -27,6 +27,7 @@ Module Type SQL.
   | cndtrue   : precond
   | cndfalse  : precond
   | cndnull   : bool -> pretm -> precond
+  | cndistrue : precond -> precond
   | cndpred   : forall n, (forall l : list BaseConst, length l = n -> bool) -> list pretm -> precond
   | cndmemb   : bool -> list pretm -> prequery -> precond
   | cndex     : prequery -> precond
@@ -131,6 +132,7 @@ Module Type SQL.
   | j_cndtrue   : forall g, j_db d -> j_cond d g cndtrue
   | j_cndfalse  : forall g, j_db d -> j_cond d g cndfalse
   | j_cndnull   : forall g t b, j_db d -> j_tm g t -> j_cond d g (cndnull b t)
+  | j_cndistrue : forall g c, j_cond d g c -> j_cond d g (cndistrue c)
   | j_cndpred   : forall g n p tml, j_db d -> j_tml g tml -> length tml = n -> j_cond d g (cndpred n p tml)
   | j_cndmemb   : forall g q sq tl b, 
                   j_tml g tl -> j_query d g q sq -> 
@@ -237,7 +239,7 @@ Module Type SQL.
           (fun G0 btb G1 H0 => btb_schema d btb = G1)
           (fun G0 btbl G1 H0 => btbl_schema d btbl = G1)
           (fun G0 Q0 H0 => exists s0, q_schema d Q0 true = s0)
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ HWF).
+          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ HWF).
   Unshelve.
   + intros s0 c b btm btb G0 G1 Hbtb IHbtb Hc IHc Html. simpl. intro. rewrite e. reflexivity.
   + intros G0 btbl G1 c s0 b Hbtbl IHbtbl Hc IHc e Html. simpl.
@@ -251,6 +253,7 @@ Module Type SQL.
   + intros G0 Hdb. reflexivity.
   + intros G0 Hdb. reflexivity.
   + intros G0 t b Hdb Ht. reflexivity.
+  + intros; constructor.
   + intros; constructor.
   + intros; constructor.
   + intros; constructor.
