@@ -18,6 +18,11 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     rewrite H. reflexivity.
   Qed.
 
+  Lemma or_eq_lt_n_O n : n = 0 \/ 0 < n.
+  Proof.
+    destruct (Nat.eq_dec n 0); intuition.
+  Qed.
+
   Fixpoint cmap_length {A B : Type} (f : A -> B) l : List.length (List.map f l) = List.length l.
   refine (match l with List.nil => _ | List.cons h t => _ end).
   exact eq_refl.
@@ -40,8 +45,8 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
 
   Lemma length_concat_list_sum (A : Type) (l : list (list A)) : 
     List.length (List.concat l) = list_sum (List.map (@List.length A) l).
-  rewrite <- (map_id l) at 1. rewrite <- flat_map_concat_map.
-  rewrite flat_map_length. apply f_equal. apply map_ext. auto.
+  rewrite <- (List.map_id l) at 1. rewrite <- flat_map_concat_map.
+  rewrite flat_map_length. apply f_equal. apply List.map_ext. auto.
   Defined.
 
   Definition cast (A B : Type) (e : A = B) (a : A) : B.
@@ -325,6 +330,14 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     length al = length bl -> List.map fst (combine al bl) = al.
   Proof.
     intros. eapply (list_ind2 _ _ (fun al bl => List.map fst (combine al bl) = al) _ _ _ _ H). Unshelve.
+    + reflexivity.
+    + simpl; intros. rewrite H1. reflexivity.
+  Qed.
+
+  Lemma map_snd_combine A B (al : list A) (bl : list B) : 
+    length al = length bl -> List.map snd (combine al bl) = bl.
+  Proof.
+    intros. eapply (list_ind2 _ _ (fun al bl => List.map snd (combine al bl) = bl) _ _ _ _ H). Unshelve.
     + reflexivity.
     + simpl; intros. rewrite H1. reflexivity.
   Qed.
@@ -884,5 +897,19 @@ Require Import Lists.List Lists.ListSet Vector Arith.PeanoNat Bool.Sumbool JMeq
     P (unopt x H).
   Proof.
     destruct x; intuition. contradiction H. reflexivity.
+  Qed.
+
+  Lemma list_sum_O l : (forall x, List.In x l -> x = 0) -> list_sum l = O.
+  Proof.
+    elim l; eauto. intros; simpl. rewrite (H0 a). apply H. 
+    intros; apply H0. right; exact H1. left; reflexivity.
+  Qed.
+
+  Lemma list_sum_O' l : list_sum l = O -> forall x, List.In x l -> x = O.
+  Proof.
+    elim l.
+    simpl; intros; contradiction H0.
+    simpl; intros. destruct (plus_is_O _ _ H0). destruct H1; eauto.
+    rewrite <- H1. exact H2.
   Qed.
 

@@ -45,6 +45,14 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
       let l := nodup (OV.veq_dec _) l0 in
       List.fold_left (fun acc x => acc ++
         repeat (f x) (count_occ (OV.veq_dec _) l0 x)) l List.nil.
+  Definition list_rcomp {m} {n} : list (T m) -> (T m -> list (T n)) -> list (T n)
+    := fun l f =>
+      let l1 := nodup (OV.veq_dec _) l in
+      let l2 := nodup (OV.veq_dec _) (List.concat (List.map f l)) in
+      List.fold_left 
+        (fun acc t => acc ++ repeat t
+          (list_sum (List.map (fun u => count_occ (OV.veq_dec _) l u * count_occ (OV.veq_dec _) (f u) t) l1)))
+        l2 List.nil.
 
   (* public operations *)
   Definition memb {n} := fun (r : R n) t => count_occ (OV.veq_dec n) (projT1 r) t.
@@ -58,6 +66,8 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     := fun A B => existT _ (sort (list_times (projT1 A) (projT1 B))) (sort_is_sorted _).
   Definition sum {m} {n} : R m -> (T m -> T n) -> R n
     := fun A f => existT _ (sort (list_comp (projT1 A) f)) (sort_is_sorted _).
+  Definition rsum {m} {n} : R m -> (T m -> R n) -> R n
+    := fun A f => existT _ (sort (list_rcomp (projT1 A) (fun x => projT1 (f x)))) (sort_is_sorted _).
   Definition sel {n} : R n -> (T n -> bool) -> R n
     := fun A p => existT _ (sort (List.filter p (projT1 A))) (sort_is_sorted _).
   Definition flat {n} : R n -> R n := fun A => existT _ (sort (nodup (OV.veq_dec n) (projT1 A))) (sort_is_sorted _).
@@ -66,10 +76,11 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
   Implicit Arguments times [m n].
   Implicit Arguments sum [m n].
   Implicit Arguments sel [n].
+  Implicit Arguments rsum [m n].
 
   Definition card {n} := fun S => memb (@sum n 0 S (fun _ => Vector.nil _)) (Vector.nil _).
 
-  Definition Rnil : R 0 := existT _ (sort List.nil) (sort_is_sorted _).
+  Definition Rnil {n} : R n := existT _ (sort List.nil) (sort_is_sorted _).
   Definition Rone : R 0 := existT _ (sort (List.cons (Vector.nil _) List.nil)) (sort_is_sorted _).
   (* generalized cartesian product of m relations, each taken with its arity n *)
   Fixpoint prod (Rl : list { n : nat & R n }) 
@@ -156,11 +167,6 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     apply IHl. simpl in H. destruct (dec a x); intuition.
     rewrite count_occ_app. rewrite H0. rewrite count_occ_repeat_neq. reflexivity.
     simpl in H. destruct (dec a x); intuition.
-  Qed.
-
-  Lemma or_eq_lt_n_O n : n = 0 \/ 0 < n.
-  Proof.
-    destruct (Nat.eq_dec n 0); intuition.
   Qed.
 
   Lemma count_occ_nodup {A} {dec} l (x:A) : 
@@ -405,6 +411,44 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
         intro. rewrite H0 in Hfat. rewrite (proj2 (T_eqb_eq _ _ _) eq_refl) in Hfat. discriminate Hfat.
   Qed.
 
+  Lemma count_occ_list_rcomp {m} {n} l (f : T m -> list (T n)) :
+    forall t,
+    count_occ (OV.veq_dec n) (list_rcomp l f) t =
+    list_sum (List.map 
+      (fun u => count_occ (OV.veq_dec _) l u * count_occ (OV.veq_dec _) (f u) t) 
+      (nodup (OV.veq_dec _) l)).
+  Proof.
+    intro. simpl. unfold list_rcomp.
+    destruct (or_eq_lt_n_O (count_occ (OV.veq_dec n) (nodup (OV.veq_dec n) (concat (List.map f l))) t)).
+    rewrite list_sum_O. rewrite count_occ_fold'; eauto.
+    enough (count_occ (OV.veq_dec _) (List.concat (List.map f l)) t = O). clear H.
+    intros.
+    enough (List.In x (List.map (fun u => count_occ (OV.veq_dec _) l u * count_occ (OV.veq_dec _) (f u) t) l)).
+    clear H. induction l in H0, H1 at 2 |- *.
+    simpl in H1. contradiction.
+    rewrite List.map_cons, concat_cons, count_occ_app in H0. destruct (plus_is_O _ _ H0); clear H0.
+    rewrite List.map_cons in H1. destruct H1.
+    rewrite <- H0, H. omega.
+    apply IHl0. apply H2.
+    apply H0.
+    destruct (List.in_map_iff
+     (fun u => count_occ (OV.veq_dec _) l u * count_occ (OV.veq_dec _) (f u) t)
+     (nodup (OV.veq_dec _) l) x).
+    destruct (H1 H); clear H1 H2. destruct H3.
+    destruct (List.in_map_iff
+     (fun u => count_occ (OV.veq_dec _) l u * count_occ (OV.veq_dec _) (f u) t)
+     l x).
+    apply H4. rewrite <- H1. exists x0. split; auto.
+    destruct (nodup_In (OV.veq_dec _) l x0). auto.
+    destruct (@count_occ_nodup_O _ (OV.veq_dec _) (concat (List.map f l)) t). auto.
+
+    rewrite (count_occ_fold (nodup (OV.veq_dec n) (concat (List.map f l))) List.nil); eauto.
+    apply NoDup_nodup.
+    intros. destruct H0.
+    rewrite H1 in H0. intuition.
+    simpl in H0. intuition.
+  Qed.
+
   (* public properties *)
   Lemma p_fs : forall n, forall r : R n, forall t, memb r t > 0 -> List.In t (supp r).
   Proof.
@@ -449,6 +493,13 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
     rewrite <- count_occ_sort. clear e. unfold list_comp. 
     rewrite (count_occ_list_comp _ _ _ _ List.nil); reflexivity.
   Qed.
+  Lemma p_rsum : forall m n, forall r : R m, forall f : T m -> R n, forall t, 
+                    memb (rsum r f) t = list_sum (List.map (fun t0 => memb r t0 * memb (f t0) t) (supp r)).
+  Proof.
+    intros. destruct r. unfold memb, supp; simpl.
+    rewrite <- count_occ_sort. clear e.
+    rewrite count_occ_list_rcomp; reflexivity.
+  Qed.
 
   Lemma p_self : forall n, forall r : R n, forall p t, p t = false -> memb (sel r p) t = 0.
   Proof.
@@ -480,7 +531,7 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
       apply count_occ_nodup_O. apply count_occ_not_In. exact n0.
       symmetry. apply count_occ_not_In. exact n0.
   Qed.
-  Lemma p_nil : forall t, memb Rnil t = 0.
+  Lemma p_nil : forall n (t : T n), memb Rnil t = 0.
   Proof.
     intros. reflexivity.
   Qed.
@@ -499,6 +550,22 @@ Module MultiSet (O : OrdType.OrdType) <: REL.
 
     generalize e; clear e. rewrite H0. intros. f_equal.
     destruct e. apply JMeq_eq. destruct e0. reflexivity.
+  Qed.
+
+  Definition Rsingle {n} : T n -> R n :=
+    fun t => sum Rone (fun _ => t).
+  Lemma p_single : forall n (t : T n), memb (Rsingle t) t = 1.
+  Proof.
+    intros. unfold Rsingle. rewrite p_sum. replace (T_eqb t t) with true. 
+    simpl. rewrite p_one. omega.
+    rewrite (proj2 (T_eqb_eq _ _ _) eq_refl). reflexivity.
+  Qed.
+  Lemma p_single_neq : forall n (t1 t2 : T n), t1 <> t2 -> memb (Rsingle t1) t2 = 0.
+  Proof.
+    intros. unfold Rsingle. rewrite p_sum. replace (T_eqb t1 t2) with false. simpl. reflexivity.
+    destruct (T_eqb t1 t2) eqn:e.
+    contradiction H. eapply (proj1 (T_eqb_eq _ _ _)). exact e.
+    reflexivity.
   Qed.
 
 End MultiSet.
